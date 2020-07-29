@@ -185,8 +185,7 @@ class ComponentInfoTab(QWidget):
         log_branch.setText(0,"Session Log Data")
         log_branch.setFont(0, self.h1_font)
         self.component_tree.setFirstItemColumnSpanned(log_branch,True)
-        self.fill_item(log_branch, self.root.data_package["Network Logs"],self.component_tree)  
-
+        
 
         # New widget
         self.realtime_tree.clear()
