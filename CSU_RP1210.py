@@ -59,15 +59,14 @@ from PyQt5.QtWidgets import (QMainWindow,
 from PyQt5.QtCore import Qt, QTimer, QAbstractTableModel, QCoreApplication, QSize
 from PyQt5.QtGui import QIcon
 
+import humanize
+
 import queue
 import time
-import shutil
 import base64
 import sys
 import struct
 import json
-import humanize
-import random
 import os
 import threading
 import binascii
@@ -91,8 +90,6 @@ try:
         CSU_RP1210_version = json.load(f)
 except:
     print("This is a module that should be run from another program. See the demo code.")
-
-start_time = time.strftime("%Y-%m-%dT%H%M%S %Z", time.localtime())
 
 class CSU_RP1210(QMainWindow):
     def __init__(self):
@@ -230,7 +227,7 @@ class CSU_RP1210(QMainWindow):
         progress_label.setText("Starting Loop Timers")
         connections_timer = QTimer(self)
         connections_timer.timeout.connect(self.check_connections)
-        connections_timer.start(1500) #milliseconds
+        connections_timer.start(1003) #milliseconds
 
         read_timer = QTimer(self)
         read_timer.timeout.connect(self.read_rp1210)
@@ -971,11 +968,10 @@ class CSU_RP1210(QMainWindow):
                     #Get a message from the queue. These are raw bytes
                     #if not protocol == "J1708":
                     rxmessage = self.rx_queues[protocol].get() 
-                    #logger.debug(rxmessage)                                  
+                    # logger.debug(rxmessage)                                  
                     if protocol == "J1939" or protocol == "Logger" :
                         try:
                             self.J1939.fill_j1939_table(rxmessage)
-                            #J1939logger.info(rxmessage)
                         except:
                             logger.debug(traceback.format_exc())
                     elif protocol == "J1708":
@@ -985,7 +981,7 @@ class CSU_RP1210(QMainWindow):
                         except:
                             logger.debug(traceback.format_exc())
                     
-                    if time.time() - start_time + 50 > self.update_rate: #give some time to process events
+                    if time.time() - start_time + .020 > self.update_rate: #give some time to process events
                         logger.debug("Can't keep up with messages.")
                         return
         

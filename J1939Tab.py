@@ -41,7 +41,6 @@ import traceback
 from collections import OrderedDict
 from RP1210.RP1210Functions import *
 from TableModel.TableModel import *
-from Graphing.graphing import *
 from ISO15765 import *
 
 import logging
