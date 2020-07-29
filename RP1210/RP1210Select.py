@@ -16,14 +16,13 @@ import json
 import configparser
 import traceback
 import logging
-from UserData import get_storage_path
 logger = logging.getLogger(__name__)
 
 class SelectRP1210(QDialog):
     """
     A Qt dialog box that parses the RP1210 ini files to enable a user to select the RP1210 device. 
     """
-    def __init__(self,title):
+    def __init__(self):
         super(SelectRP1210,self).__init__()
         RP1210_config = configparser.ConfigParser()
         try:
@@ -35,9 +34,8 @@ class SelectRP1210(QDialog):
         self.apis = sorted(RP1210_config["RP1210Support"]["apiimplementations"].split(","))
         self.current_api_index = 0
         logger.debug("Current RP1210 APIs installed are: " + ", ".join(self.apis))
-        storage = get_storage_path(title)
-        self.selection_filename = os.path.join(storage,"RP1210_selection.txt")
-        self.connections_file = os.path.join(storage,"Last_RP1210_Connection.json")
+        self.selection_filename = "RP1210_selection.txt"
+        self.connections_file = "Last_RP1210_Connection.json"
         
         self.setup_dialog()
         self.setWindowTitle("Select RP1210")
