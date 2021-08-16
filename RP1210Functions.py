@@ -25,7 +25,7 @@ def bytes_to_hex_string(byte_string):
         return " ".join("{:02X}".format(c) for c in byte_string)
     except (TypeError, IndexError):
         # When unable to iterate over byte_string just return an empty string                                                                                                                             
-        logger.debug(traceback.format_exc)
+        #logger.debug(traceback.format_exc())
         return ""
 
 def hex_string_to_bytes(hex_string):

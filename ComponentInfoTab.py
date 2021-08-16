@@ -39,7 +39,7 @@ import time
 import random
 import traceback
 from collections import OrderedDict
-from RP1210.RP1210Functions import *
+from RP1210Functions import *
 from TableModel.TableModel import *
 
 import logging

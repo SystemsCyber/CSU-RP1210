@@ -1,24 +1,23 @@
 from PyQt5.QtWidgets import QMessageBox, QInputDialog
+from PyQt5.QtCore import Qt, QCoreApplication
 # Use ctypes to import the RP1210 DLL
 from ctypes import *
 from ctypes.wintypes import HWND
 import json
 import os
-import tempfile
-
-# create a temporary file and write some data to it
 import threading
 import time
 import struct
 import traceback
-from RP1210.RP1210Functions import *
+from RP1210Functions import *
+
 import logging
 logger = logging.getLogger(__name__)
 
-RP1210_BUFFER_SIZE = 2048
+def get_storage_path():
+    return os.getcwd()
 
-def main():
-    pass
+BUFFER_SIZE = 8192
 
 class RP1210ReadMessageThread(threading.Thread):
     '''This thread is designed to receive messages from the vehicle diagnostic
@@ -29,125 +28,101 @@ class RP1210ReadMessageThread(threading.Thread):
     nClientID - this lets us know which network is being used to receive the
                 messages. This will likely be a 1 or 2'''
 
-    def __init__(self, parent, rx_queue, extra_queue, tx_queue, RP1210_ReadMessage, RP1210_SendMessage, nClientID, protocol):
+    def __init__(self, parent, rx_queue, extra_queue, RP1210_ReadMessage, nClientID, protocol, title, filename="NetworkTraffic"):
         threading.Thread.__init__(self)
         self.root = parent
         self.rx_queue = rx_queue
-        self.tx_queue = tx_queue
+        self.extra_queue = extra_queue
         self.RP1210_ReadMessage = RP1210_ReadMessage
-        self.RP1210_SendMessage = RP1210_SendMessage
         self.nClientID = nClientID
         self.runSignal = True
         self.message_count = 0
         self.start_time = time.time()
         self.duration = 0
-        self.filename = tempfile.NamedTemporaryFile()
+        self.filename = os.path.join(get_storage_path(), protocol + filename + ".bin")
         self.protocol = protocol
-        self.pgns_to_block=[]
-        self.sources_to_block=[]
+        self.pgns_to_block=[61444, 61443, 65134, 65215]
+        self.sources_to_block=[0, 11]
         self.can_ids_to_block = []
-        self.ucTxRxBuffer = (c_char * RP1210_BUFFER_SIZE)()
-        self.send_message_thread = RP1210SendMessageThread(self)
-        self.send_message_thread.setDaemon(True) #needed to close the thread when the application closes.
-        self.send_message_thread.start()
-        logger.debug("Started Send Message Thread.")   
-
-    def run(self):
-        logger.debug("Read Message Client ID: {}".format(self.nClientID))
-        while self.runSignal: 
-            self.duration = time.time() - self.start_time
-            return_value = self.RP1210_ReadMessage(c_short(self.nClientID),
-                                                   byref(self.ucTxRxBuffer),
-                                                   c_short(RP1210_BUFFER_SIZE),
-                                                   c_short(BLOCKING_IO))
-            if return_value > 0:
-                current_time = time.time()
-                #if self.ucTxRxBuffer[4] == b'\x00': #Echo is on, so we only want to see what others are sending.
-                self.message_count +=1
-                               
-                if self.protocol == "CAN":
-                    vda_timestamp = struct.unpack(">L",self.ucTxRxBuffer[0:4])[0]
-                    extended = self.ucTxRxBuffer[5]
-                    if extended:
-                        can_id = struct.unpack(">L",self.ucTxRxBuffer[6:10])[0] #Swap endianness
-                        can_data = self.ucTxRxBuffer[10:return_value]
-                        dlc = int(return_value - 10)    
-                    else:
-                        can_id = struct.unpack(">H",self.ucTxRxBuffer[6:8])[0] #Swap endianness
-                        can_data = self.ucTxRxBuffer[8:return_value]
-                        dlc = int(return_value - 8)
-                    self.rx_queue.put({
-                        'protocol': self.protocol,
-                        'current_time': current_time,
-                        'vda_timestamp': vda_timestamp, 
-                        'can_id': can_id,
-                        'dlc': dlc,
-                        'can_data': can_data
-                        })
-                    
-                elif self.protocol == "J1939":
-                    pgn = struct.unpack("<L", self.ucTxRxBuffer[5:8] + b'\x00')[0]
-                    sa = struct.unpack("B",self.ucTxRxBuffer[9])[0]
-                    self.rx_queue.put({
-                        'protocol': self.protocol,
-                        'current_time': current_time,
-                        'data': self.ucTxRxBuffer[:return_value]
-                        })
         
+    def run(self):
+        ucTxRxBuffer = (c_char * BUFFER_SIZE)()
+        # display a valid connection upon start.
+        logger.debug("Read Message Client ID: {}".format(self.nClientID))
+        message_bytes = b'1210'
+        # with open(self.filename,'wb') as log_file:
+        #     pass
+        while self.runSignal: #Look into threading.events
+                self.duration = time.time() - self.start_time
+                return_value = self.RP1210_ReadMessage(c_short(self.nClientID),
+                                                       byref(ucTxRxBuffer),
+                                                       c_short(BUFFER_SIZE),
+                                                       c_short(BLOCKING_IO))
+                if return_value > 0:
+                    current_time = time.time()
+                    if ucTxRxBuffer[4] == b'\x00': #Echo is on, so we only want to see what others are sending.
+                        self.message_count +=1
+                                   
+                    if self.protocol == "CAN":
+                        vda_timestamp = struct.unpack(">L",ucTxRxBuffer[0:4])[0]
+                        extended = ucTxRxBuffer[5]
+                        if extended:
+                            can_id = struct.unpack(">L",ucTxRxBuffer[6:10])[0] #Swap endianness
+                            can_data = ucTxRxBuffer[10:return_value]
+                            dlc = int(return_value - 10)
+                        
+                        else:
+                            can_id = struct.unpack(">H",ucTxRxBuffer[6:8])[0] #Swap endianness
+                            can_data = ucTxRxBuffer[8:return_value]
+                            dlc = int(return_value - 8)
+                        
+                        # #the following conversion is to emulate the data structure from the NMFTA CAN Logger Project
+                        # # See https://github.com/Heavy-Vehicle-Networking-At-U-Tulsa/NMFTA-CAN-Logger/tree/master/_07_Low_Latency_Logger_with_Requests
+                        # try:
+                        #     microsecond_bytes = struct.pack("<L", int((dlc << 24) + (current_time % 1) * 1000000))
+                        # except struct.error:
+                        #     continue
+                        # # RP1210_ReadMessage API:
+                        # #Reverse endianess
+                        # #vda_timestamp = struct.pack("<L",struct.unpack(">L",ucTxRxBuffer[0:4])[0])  
+                        
+                        
+                        # #echo_byte = ucTxRxBuffer[4]
+                        
+                        # # Build the 24 bytes that make up a CAN message.
+                        # message_bytes = time_bytes
+                        # message_bytes += vda_timestamp
+                        # message_bytes += microsecond_bytes
+                        # message_bytes += can_id
+                        # message_bytes += can_data
+                        self.rx_queue.put( (current_time, vda_timestamp, can_id, dlc, can_data) )
+                        
+
+                    elif self.protocol == "J1708": 
+                        self.rx_queue.put((current_time, ucTxRxBuffer[:return_value]))
+                        #self.extra_queue.put((current_time, ucTxRxBuffer[5:return_value]))
+                        
+                    elif self.protocol == "J1939":
+                        pgn = struct.unpack("<L", ucTxRxBuffer[5:8] + b'\x00')[0]
+                        sa = struct.unpack("B",ucTxRxBuffer[9])[0]
+                        
+                        if (pgn not in self.pgns_to_block) or (sa not in self.sources_to_block):
+                            self.rx_queue.put({'current_time':current_time,'data':ucTxRxBuffer[:return_value]})
+                        #ISO 15765 traffic only
+                        if pgn == 0xDA00:
+                            dst_addr = struct.unpack("B",ucTxRxBuffer[10])[0]
+                            message_data = ucTxRxBuffer[11:return_value]
+                            self.extra_queue.put((pgn, 6, sa, dst_addr, message_data))
+
+                    
         logger.debug("RP1210 Receive Thread is finished.")
 
-    def make_log_data(self,message_bytes,return_value,time_bytes):
+    def make_log_data(self,message_bytes,return_value,time_bytes,ucTxRxBuffer):
         length_bytes = struct.pack("<H",return_value + 4)
         message_bytes += length_bytes
         message_bytes += time_bytes
-        message_bytes += self.ucTxRxBuffer[:return_value]
+        message_bytes += ucTxRxBuffer[:return_value]
         return message_bytes
-
-
-class RP1210SendMessageThread(threading.Thread):
-    '''This thread is designed to send messages to the vehicle diagnostic
-    adapter (VDA) after it is read from a queue. The class arguments are as
-    follows:
-    tx_queue - A data structure to accept 29-bin CAN messages.
-    RP1210_SendMessage - a function handle to the VDA DLL.
-    nClientID - this lets us know which network is being used to receive the
-                messages. This will likely be a 1 or 2'''
-
-    def __init__(self, parent):
-        threading.Thread.__init__(self)
-        self.root = parent
-        self.runSignal = True
-
-    def run(self):
-        #     pass
-        counter = 0
-        ucTxRxBuffer = (c_char*RP1210_BUFFER_SIZE)()
-        while self.runSignal:
-            if self.root.protocol == 'J1939':
-                (can_id, dlc, data_bytes, BAM) = self.root.tx_queue.get()
-                SA = can_id & 0xFF
-                DA = 0xFF
-                priority = (can_id & 0x1C000000) >> 24
-                PGN = (can_id & 0x03FFFF00) >> 8
-                if PGN < 0xF000:
-                    DA = PGN & 0xFF
-                    PGN = PGN & 0xFF00
-
-                b0 =  PGN & 0xff
-                b1 = (PGN & 0xff00) >> 8
-                b2 = (PGN & 0xff0000) >> 16
-                if BAM and len(data_bytes) > 8:
-                    priority |= 0x80
-                message_bytes = bytes([b0, b1, b2, priority, SA, DA])
-                message_bytes += data_bytes
-                self.root.send_message(message_bytes)
-                    # if return_value != 0:
-                    #     self.runSignal = False
-                    # tx_count += 1
-                    
-
-        logger.debug("RP1210 Send Thread is finished.")
-
 
 class RP1210Class():
     """A class to access RP1210 libraries for different devices."""
@@ -157,10 +132,25 @@ class RP1210Class():
         The input argument is the dll_name from one of the manufacturers DLLs in the c:\Windows directory  
         """
         self.nClientID = None
-        self.ucTxRxBuffer = (c_char*RP1210_BUFFER_SIZE)()
-        self.create_RP1210_functions(dll_name)
-
-    def create_RP1210_functions(self,dll_name):
+        self.ucTxRxBuffer = (c_char*BUFFER_SIZE)()
+        self.dll_name = dll_name
+        self.dll_path = self.find_dll_path()
+        self.create_RP1210_functions()
+        
+    
+    def find_dll_path(self):
+        places_to_look = [r'C:\Windows\SysWOW64', r'C:\Windows',r'C:\Windows\System32']
+        for place in places_to_look:
+            logger.debug("looking for RP1210 DLL in {}".format(place))
+            dll_path = os.path.join(place,self.dll_name + '.dll')
+            if os.path.exists(dll_path):    
+                logger.info("Found RP1210 DLL at {}".format(dll_path))
+                return dll_path
+        logger.warning("Could not find RP1210 DLL. Please make sure drivers are installed.")
+        logger.debug("We'll try to use just the filename and see what happens.")
+        return self.dll_name + '.dll'
+        
+    def create_RP1210_functions(self):
         """
         Create function prototypes to access the DLL of the RP1210 Drivers.
         """
@@ -177,83 +167,80 @@ class RP1210Class():
         self.GetHardwareStatusEx = None
         self.GetLastErrorMsg = None
         
-        self.dll_name = dll_name
+        logger.debug("Loading the RP1210 driver file at {}".format(self.dll_path))
+        try:
+            RP1210DLL = windll.LoadLibrary(self.dll_path)
+        except:
+            logger.debug(traceback.format_exc())
+            logger.info("\nIf RP1210 DLL fails to load, please check to be sure you are using"
+                + " a 32-bit version of Python and you have the correct drivers for the VDA installed.")
+            return False
 
-        if dll_name is not None:
-            logger.debug("Loading the {} file.".format(dll_name + ".dll"))
-            try:
-                RP1210DLL = windll.LoadLibrary(dll_name + ".dll")
-            except Exception as e:
-                logger.debug(traceback.format_exc())
-                logger.info("\nIf RP1210 DLL fails to load, please check to be sure you are using"
-                    + "a 32-bit version of Python and you have the correct drivers for the VDA installed.")
-                return None
+        # Define windows prototype functions:
+        try:
+            prototype = WINFUNCTYPE(c_short, HWND, c_short, c_char_p, c_long, c_long, c_short)
+            self.ClientConnect = prototype(("RP1210_ClientConnect", RP1210DLL))
 
-            # Define windows prototype functions:
-            try:
-                prototype = WINFUNCTYPE(c_short, HWND, c_short, c_char_p, c_long, c_long, c_short)
-                self.ClientConnect = prototype(("RP1210_ClientConnect", RP1210DLL))
+            prototype = WINFUNCTYPE(c_short, c_short)
+            self.ClientDisconnect = prototype(("RP1210_ClientDisconnect", RP1210DLL))
 
-                prototype = WINFUNCTYPE(c_short, c_short)
-                self.ClientDisconnect = prototype(("RP1210_ClientDisconnect", RP1210DLL))
+            prototype = WINFUNCTYPE(c_short, c_short,  POINTER(c_char*BUFFER_SIZE), c_short, c_short, c_short)
+            self.SendMessage = prototype(("RP1210_SendMessage", RP1210DLL))
 
-                prototype = WINFUNCTYPE(c_short, c_short,  POINTER(c_char*RP1210_BUFFER_SIZE), c_short, c_short, c_short)
-                self.SendMessage = prototype(("RP1210_SendMessage", RP1210DLL))
+            prototype = WINFUNCTYPE(c_short, c_short, POINTER(c_char*BUFFER_SIZE), c_short, c_short)
+            self.ReadMessage = prototype(("RP1210_ReadMessage", RP1210DLL))
 
-                prototype = WINFUNCTYPE(c_short, c_short, POINTER(c_char*RP1210_BUFFER_SIZE), c_short, c_short)
-                self.ReadMessage = prototype(("RP1210_ReadMessage", RP1210DLL))
+            prototype = WINFUNCTYPE(c_short, c_short, c_short, POINTER(c_char*BUFFER_SIZE), c_short)
+            self.SendCommand = prototype(("RP1210_SendCommand", RP1210DLL))
+        except Exception as e:
+            logger.debug(traceback.format_exc())
+            logger.debug("\n Critical RP1210 functions were not able to be loaded. There is something wrong with the DLL file.")
+            return False
 
-                prototype = WINFUNCTYPE(c_short, c_short, c_short, POINTER(c_char*RP1210_BUFFER_SIZE), c_short)
-                self.SendCommand = prototype(("RP1210_SendCommand", RP1210DLL))
-            except Exception as e:
-                logger.debug(traceback.format_exc())
-                logger.debug("\n Critical RP1210 functions were not able to be loaded. There is something wrong with the DLL file.")
-                return None
+        try:
+            prototype = WINFUNCTYPE(c_short, c_char_p, c_char_p, c_char_p, c_char_p)
+            self.ReadVersion = prototype(("RP1210_ReadVersion", RP1210DLL))
+        except Exception as e:
+            logger.exception(e)
 
-            try:
-                prototype = WINFUNCTYPE(c_short, c_char_p, c_char_p, c_char_p, c_char_p)
-                self.ReadVersion = prototype(("RP1210_ReadVersion", RP1210DLL))
-            except Exception as e:
-                logger.exception(e)
+        try:
+            prototype = WINFUNCTYPE(c_short, c_short, POINTER(c_char*17), POINTER(c_char*17), POINTER(c_char*17))
+            self.ReadDetailedVersion = prototype(("RP1210_ReadDetailedVersion", RP1210DLL))
+        except Exception as e:
+            logger.debug(traceback.format_exc())
+            self.ReadDetailedVersion = None
 
-            try:
-                prototype = WINFUNCTYPE(c_short, c_short, POINTER(c_char*17), POINTER(c_char*17), POINTER(c_char*17))
-                self.ReadDetailedVersion = prototype(("RP1210_ReadDetailedVersion", RP1210DLL))
-            except Exception as e:
-                logger.debug(traceback.format_exc())
-                self.ReadDetailedVersion = None
+        try:
+            prototype = WINFUNCTYPE(c_short, c_short, POINTER(c_char*64), c_short, c_short)
+            self.GetHardwareStatus = prototype(("RP1210_GetHardwareStatus", RP1210DLL))
+        except Exception as e:
+            logger.debug(traceback.format_exc())
 
-            try:
-                prototype = WINFUNCTYPE(c_short, c_short, POINTER(c_char*64), c_short, c_short)
-                self.GetHardwareStatus = prototype(("RP1210_GetHardwareStatus", RP1210DLL))
-            except Exception as e:
-                logger.debug(traceback.format_exc())
+        # try:
+        #     prototype = WINFUNCTYPE(c_short, c_short, POINTER(c_char*256))
+        #     self.GetHardwareStatusEx = prototype(("RP1210_GetHardwareStatusEx", RP1210DLL))
+        # except Exception as e:
+        #     logger.debug(traceback.format_exc())
+            
+        try:
+            prototype = WINFUNCTYPE(c_short, c_short, POINTER(c_char*80))
+            self.GetErrorMsg = prototype(("RP1210_GetErrorMsg", RP1210DLL))
+        except Exception as e:
+            logger.debug(traceback.format_exc())
 
-            try:
-                prototype = WINFUNCTYPE(c_short, c_short, POINTER(c_char*256))
-                self.GetHardwareStatusEx = prototype(("RP1210_GetHardwareStatusEx", RP1210DLL))
-            except Exception as e:
-                logger.debug(traceback.format_exc())
-                
-            try:
-                prototype = WINFUNCTYPE(c_short, c_short, POINTER(c_char*80))
-                self.GetErrorMsg = prototype(("RP1210_GetErrorMsg", RP1210DLL))
-            except Exception as e:
-                logger.debug(traceback.format_exc())
-
-            try:
-                prototype = WINFUNCTYPE(c_short, c_short, POINTER(c_int), POINTER(c_char*80), c_short)
-                self.GetLastErrorMsg = prototype(("RP1210_GetLastErrorMsg", RP1210DLL))
-            except Exception as e:
-                logger.debug(traceback.format_exc())
-        else:
-            logger.warning("DLL file was None.")
+        try:
+            prototype = WINFUNCTYPE(c_short, c_short, POINTER(c_int), POINTER(c_char*80), c_short)
+            self.GetLastErrorMsg = prototype(("RP1210_GetLastErrorMsg", RP1210DLL))
+        except Exception as e:
+            logger.debug(traceback.format_exc())
+        return True
 
     def get_client_id(self, protocol, deviceID, speed):
         """
         Loads the DLL in to Python and assignes self.nClientID. This is used to reference the DLL client in the app.
         Saves successful clients to a json file so it doesn't ask the user for input each time.
         """
+        QCoreApplication.processEvents()
         nClientID = None
         if len(speed) > 0 and (protocol == "J1939"  or protocol == "CAN" or protocol == "ISO15765"):
             protocol_bytes = bytes(protocol + ":Baud={}".format(speed),'ascii')
@@ -261,7 +248,7 @@ class RP1210Class():
             protocol_bytes = bytes(protocol,'ascii')
         logger.debug("Connecting with ClientConnect using " + repr(protocol_bytes))
         try:
-            nClientID = self.ClientConnect(HWND(None), c_short(deviceID), protocol_bytes, 0, 0, 0)
+            nClientID = self.ClientConnect(HWND(None), c_short(deviceID), protocol_bytes, BUFFER_SIZE, BUFFER_SIZE, 0)
             logger.debug("The Client ID is: {}, which means {}".format(nClientID, self.get_error_code(nClientID)))
             
         except Exception as e:
@@ -667,13 +654,22 @@ class RP1210Class():
         except:
             logger.warning(traceback.format_exc())
 
-    def get_last_error_msg(self,nClientID,nErrorCode):
+    def get_last_error_msg(self,nClientID):
         """
         Look up error codes from RP1210
         """
+        nErrorCode, ok = QInputDialog.getInt(self, 
+                                            'Last Error Code',
+                                            'Enter Error Code:',
+                                            value = -1, 
+                                            min = 0, 
+                                            max=255)
+        message_window = QMessageBox()
+        message_window.setIcon(QMessageBox.Information)
+        message_window.setWindowTitle('RP1210 Get Last Error Message')
+        message_window.setStandardButtons(QMessageBox.Ok)
         # Make sure the function prototype is available:
-        if (self.GetLastErrorMsg is not None 
-            and nClientID is not None):
+        if self.GetLastErrorMsg is not None and nClientID is not None:
             fpchDescription = (c_char*80)()
             nSubErrorCode = (c_int)()
             return_value = self.GetLastErrorMsg(c_short(nErrorCode),
@@ -685,16 +681,15 @@ class RP1210Class():
             if return_value == 0 :
                 message = "Client ID is {}.\nError Code {} means {}".format(clientID, nErrorCode, description)
                 if sub_error < 0:
-                    message += "\nNo subordinate error code is available."
+                    message_window.setInformativeText("No subordinate error code is available.")
                 else:
-                    message += "\nAdditional Code: {}".format(sub_error)
+                    message_window.setInformativeText("Additional Code: {}".format(sub_error))
             else:
-                message = "RP1210_GetLastErrorMsg failed with a return value of  {}: {}".format(return_value,self.get_error_code(return_value))
+                message = "RP1210_GetLastErrorMsg failed with\na return value of  {}: {}".format(return_value,self.get_error_code(return_value))
         else:
             message = "RP1210_GetLastErrorMsg() function is not available."
 
         logger.debug(message)
-        return message
+        message_window.setText(message)
+        message_window.exec_()
 
-if __name__ == '__main__':
-    main()
