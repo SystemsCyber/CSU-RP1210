@@ -981,7 +981,7 @@ class CSU_RP1210(QMainWindow):
                     elif protocol == "J1708":
                         try:
                             self.J1587.fill_j1587_table(rxmessage)    
-                            J1708logger.info("{:0.6f},".format(rxmessage[0]) + ",".join("{:02X}".format(c) for c in rxmessage[1]))
+                            #J1708logger.info("{:0.6f},".format(rxmessage[0]) + ",".join("{:02X}".format(c) for c in rxmessage[1]))
                         except:
                             logger.debug(traceback.format_exc())
                     
