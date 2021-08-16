@@ -6,7 +6,7 @@ import struct
 import threading
 import json
 import base64
-from RP1210.RP1210Functions import *
+from RP1210Functions import *
 
 
     

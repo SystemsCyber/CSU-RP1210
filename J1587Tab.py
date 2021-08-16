@@ -38,7 +38,7 @@ import struct
 import json
 import math
 import traceback
-from RP1210.RP1210Functions import *
+from RP1210Functions import *
 from TableModel.TableModel import *
 
 import logging

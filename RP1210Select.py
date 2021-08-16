@@ -16,26 +16,30 @@ import json
 import configparser
 import traceback
 import logging
+from RP1210 import get_storage_path
 logger = logging.getLogger(__name__)
 
 class SelectRP1210(QDialog):
     """
     A Qt dialog box that parses the RP1210 ini files to enable a user to select the RP1210 device. 
     """
-    def __init__(self):
+    def __init__(self,title):
         super(SelectRP1210,self).__init__()
         RP1210_config = configparser.ConfigParser()
         try:
             RP1210_config.read(os.path.join(os.environ["WINDIR"],"RP121032.ini"))
+            self.apis = sorted(RP1210_config["RP1210Support"]["apiimplementations"].split(","))
+            self.current_api_index = 0
+            logger.debug("Current RP1210 APIs installed are: " + ", ".join(self.apis))
+            self.rp1201_missing = False
         except:
             logger.warning(traceback.format_exc())
             QMessageBox.warning(self,"No RP1210 Device","The RP121032.ini file was not found. Please install an RP1210 compliant Vehicle Diagnostics adatper.")
+            self.rp1201_missing = True
             return
-        self.apis = sorted(RP1210_config["RP1210Support"]["apiimplementations"].split(","))
-        self.current_api_index = 0
-        logger.debug("Current RP1210 APIs installed are: " + ", ".join(self.apis))
-        self.selection_filename = "RP1210_selection.txt"
-        self.connections_file = "Last_RP1210_Connection.json"
+        storage = get_storage_path()
+        self.selection_filename = os.path.join(storage,"RP1210_selection.txt")
+        self.connections_file = os.path.join(storage,"Last_RP1210_Connection.json")
         
         self.setup_dialog()
         self.setWindowTitle("Select RP1210")
@@ -60,7 +64,8 @@ class SelectRP1210(QDialog):
         self.exec_()
 
     def setup_dialog(self):
-
+        if self.rp1201_missing:
+            return
         vendor_label = QLabel("System RP1210 Vendors:")
         self.vendor_combo_box = QComboBox()
         self.vendor_combo_box.setInsertPolicy(QComboBox.NoInsert)
@@ -118,6 +123,8 @@ class SelectRP1210(QDialog):
         self.setLayout(self.v_layout)
 
     def fill_vendor(self):
+        if self.rp1201_missing:
+            return
         self.vendor_combo_box.clear()
         self.vendor_configs = {}
         for api_string in self.apis:
@@ -151,6 +158,8 @@ class SelectRP1210(QDialog):
             logger.debug("There are no entries in the RP1210 Vendor's ComboBox.")
 
     def fill_device(self):
+        if self.rp1201_missing:
+            return
         self.api_string = self.vendor_combo_box.currentText().split("-")[0].strip()
         self.device_combo_box.clear()
         self.protocol_combo_box.clear()
@@ -192,7 +201,8 @@ class SelectRP1210(QDialog):
         self.fill_protocol()
 
     def fill_protocol(self):
-
+        if self.rp1201_missing:
+            return
         self.protocol_combo_box.clear()
         self.speed_combo_box.clear()
         if self.device_combo_box.currentText() == "":
@@ -237,6 +247,8 @@ class SelectRP1210(QDialog):
         self.fill_speed()
 
     def fill_speed(self):
+        if self.rp1201_missing:
+            return
         self.speed_combo_box.clear()
         if self.protocol_combo_box.currentText() == "":
                 self.protocol_combo_box.setCurrentIndex(0)
@@ -251,6 +263,8 @@ class SelectRP1210(QDialog):
             logger.warning(traceback.format_exc())
 
     def connect_RP1210(self):
+        if self.rp1201_missing:
+            return
         logger.debug("Accepted Dialog OK")
         vendor_index = self.vendor_combo_box.currentIndex()
         device_index = self.device_combo_box.currentIndex()
@@ -280,15 +294,12 @@ if __name__ == '__main__':
     """
     Use this function to test the basic functionality.
     """
-    with open("..\logging.config.json",'r') as f:
-        logging_dictionary = json.load(f)
-        logging.config.dictConfig(logging_dictionary)
+    
     app = QCoreApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
     else:
         app.close()
-    dialog = SelectRP1210()
+    dialog = SelectRP1210("TruckCrypt_test")
     dialog.show_dialog()  
     sys.exit(app.exec_())
-        
