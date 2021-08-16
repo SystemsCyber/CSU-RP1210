@@ -39,7 +39,7 @@ import struct
 import base64
 import traceback
 from collections import OrderedDict
-from RP1210.RP1210Functions import *
+from RP1210Functions import *
 from TableModel.TableModel import *
 from ISO15765 import *
 

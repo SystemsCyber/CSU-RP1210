@@ -71,13 +71,17 @@ import os
 import threading
 import binascii
 
-from RP1210.RP1210 import *
-from RP1210.RP1210Functions import *
-from RP1210.RP1210Select import *
+from RP1210 import *
+from RP1210Functions import *
+from RP1210Select import *
 from J1939Tab import *
 from J1587Tab import *
 from ComponentInfoTab import *
 from ISO15765 import *
+
+if sys.maxsize > 2**32:
+    print("Must run on 32-bit Python.")
+    sys.exit()
 
 import logging
 logger.addHandler(logging.StreamHandler(sys.stdout))
@@ -627,7 +631,7 @@ class CSU_RP1210(QMainWindow):
 
     def selectRP1210(self, automatic=False):
         logger.debug("Select RP1210 function called.")
-        selection = SelectRP1210()
+        selection = SelectRP1210("CSU_RP1210")
         logger.debug(selection.dll_name)
         if not automatic:
             selection.show_dialog()
@@ -695,18 +699,20 @@ class CSU_RP1210(QMainWindow):
         # Set all filters to pass.  This allows messages to be read.
         # Constants are defined in an included file
         i = 0
+        BUFFER_SIZE = 8192
+        logger.debug("BUFFER_SIZE = {}".format(BUFFER_SIZE))
         for protocol, nClientID in self.client_ids.items():
             QCoreApplication.processEvents()
             if nClientID is not None:
                 # By turning on Echo Mode, our logger process can record sent messages as well as received.
-                fpchClientCommand = (c_char*RP1210_BUFFER_SIZE)()
+                fpchClientCommand = (c_char*8192)()
                 fpchClientCommand[0] = 1 #Echo mode on
                 return_value = self.RP1210.SendCommand(c_short(RP1210_Echo_Transmitted_Messages), 
                                                        c_short(nClientID), 
-                                                       byref(fpchClientCommand), RP1210_BUFFER_SIZE)
+                                                       byref(fpchClientCommand), 1)
                 logger.debug('RP1210_Echo_Transmitted_Messages returns {:d}: {}'.format(return_value,self.RP1210.get_error_code(return_value)))
                 
-                 #Set all filters to pass
+                #Set all filters to pas
                 return_value = self.RP1210.SendCommand(c_short(RP1210_Set_All_Filters_States_to_Pass), 
                                                        c_short(nClientID),
                                                        None, 0)
@@ -719,11 +725,9 @@ class CSU_RP1210(QMainWindow):
                     self.read_message_threads[protocol] = RP1210ReadMessageThread(self, 
                                                                                   self.rx_queues[protocol],
                                                                                   self.extra_queues[protocol],
-                                                                                  self.tx_queues[protocol],
                                                                                   self.RP1210.ReadMessage, 
-                                                                                  self.RP1210.SendMessage, 
                                                                                   nClientID,
-                                                                                  protocol)
+                                                                                  protocol,"CSU_RP1210")
                     self.read_message_threads[protocol].setDaemon(True) #needed to close the thread when the application closes.
                     self.read_message_threads[protocol].start()
                     logger.debug("Started RP1210ReadMessage Thread.")
