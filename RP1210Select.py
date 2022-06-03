@@ -150,6 +150,8 @@ class SelectRP1210(QDialog):
         try:
             self.vendor_combo_box.setCurrentIndex(int(self.selection_index[0]))
         except:
+            self.selection_index = '0,0,0'.split(',')
+            self.vendor_combo_box.setCurrentIndex(int(self.selection_index[0]))
             pass
 
         if self.vendor_combo_box.count() > 0:
@@ -161,6 +163,10 @@ class SelectRP1210(QDialog):
         if self.rp1201_missing:
             return
         self.api_string = self.vendor_combo_box.currentText().split("-")[0].strip()
+        if self.api_string == '':
+            self.selection_index = '0,0,0'.split(',')
+            self.vendor_combo_box.setCurrentIndex(int(self.selection_index[0]))
+            self.api_string = self.vendor_combo_box.currentText().split("-")[0].strip()
         self.device_combo_box.clear()
         self.protocol_combo_box.clear()
         self.speed_combo_box.clear()
