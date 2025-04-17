@@ -688,9 +688,14 @@ class CSU_RP1210(QMainWindow):
                         "deviceID":deviceID,
                         "speed":speed
                        }
-        with open(selection.connections_file,"w") as rp1210_file:
-            json.dump(file_contents, rp1210_file)
-
+        logger.debug(selection.connections_file)
+        try:
+            with open(selection.connections_file,"w") as rp1210_file:
+                json.dump(file_contents, rp1210_file)
+        except OSError as e:
+            logger.warning(repr(e))
+            logger.warning(f"Failed to create {selection.connections_file}")
+            
         self.rx_queues={"Logger":queue.Queue(10000)}
         self.read_message_threads={}
         self.extra_queues = {"Logger":queue.Queue(10000)}

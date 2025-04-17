@@ -39,7 +39,9 @@ class SelectRP1210(QDialog):
             return
         storage = get_storage_path()
         self.selection_filename = os.path.join(storage,"RP1210_selection.txt")
+        logger.debug(f"selection_filename path: {self.selection_filename}")
         self.connections_file = os.path.join(storage,"Last_RP1210_Connection.json")
+        logger.debug(f"connections_file path: {self.connections_file}")
         
         self.setup_dialog()
         self.setWindowTitle("Select RP1210")
