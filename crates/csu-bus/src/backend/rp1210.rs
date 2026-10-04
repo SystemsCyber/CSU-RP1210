@@ -39,20 +39,48 @@ struct Api {
     error_msg: Option<FnGetErrorMsg>,
 }
 
+/// The 32-to-64-bit RP1210 bridge (`rp1210_bridge/`): `rp1210_bridge64.dll`
+/// with `rp1210_host32.exe` beside it, next to this executable or at
+/// `%RP1210_BRIDGE_DLL%`.
+pub fn bridge_path() -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = std::env::var_os("RP1210_BRIDGE_DLL").map(PathBuf::from).into_iter().collect();
+    if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
+        candidates.push(dir.join("rp1210_bridge64.dll"));
+        candidates.push(dir.join("rp1210_bridge").join("bin").join("rp1210_bridge64.dll"));
+    }
+    candidates.push(PathBuf::from("rp1210_bridge").join("bin").join("rp1210_bridge64.dll"));
+    candidates
+        .into_iter()
+        .find(|p| p.is_file() && p.with_file_name("rp1210_host32.exe").is_file())
+}
+
+type FnBridgeSetTarget = unsafe extern "system" fn(*const c_char) -> c_short;
+
 impl Api {
     fn load(api_name: &str) -> Result<Self, BusError> {
-        let file = format!("{api_name}.dll");
-        // SAFETY: loading a vendor RP1210 DLL; RP1210 defines no special load rules.
+        let mut file = format!("{api_name}.dll");
+        let only_32bit = cfg!(target_pointer_width = "64") && dll_bitness(api_name) == (false, true);
+        let bridge = if only_32bit { bridge_path() } else { None };
+        if let Some(b) = &bridge {
+            file = b.display().to_string();
+        }
+        // SAFETY: loading a vendor RP1210 DLL (or the bridge); RP1210 defines no special load rules.
         unsafe {
             let lib = Library::new(&file).map_err(|e| {
-                let hint = match dll_bitness(api_name) {
-                    (false, true) if cfg!(target_pointer_width = "64") => {
-                        " (only a 32-bit DLL is installed; use a 32-bit build or the RP1210 bridge)"
-                    }
-                    _ => "",
+                let hint = if only_32bit {
+                    " (only a 32-bit DLL is installed; use a 32-bit build or put rp1210_bridge64.dll and                      rp1210_host32.exe next to csu.exe)"
+                } else {
+                    ""
                 };
                 BusError::Library(format!("{file}: {e}{hint}"))
             })?;
+            if bridge.is_some() {
+                let set_target: FnBridgeSetTarget = *lib
+                    .get(b"RP1210Bridge_SetTarget\0")
+                    .map_err(|e| BusError::Library(format!("{file}: {e}")))?;
+                let target = CString::new(api_name).map_err(|_| BusError::Spec("bad RP1210 name".into()))?;
+                set_target(target.as_ptr());
+            }
             macro_rules! sym {
                 ($name:literal) => {
                     *lib.get($name).map_err(|e| BusError::Library(format!("{file}: {e}")))?
@@ -341,7 +369,11 @@ pub fn list_implementations() -> Vec<Rp1210Implementation> {
             protocols.sort();
             protocols.dedup();
             let (dll_64bit, dll_32bit) = dll_bitness(api);
-            let loadable = if cfg!(target_pointer_width = "64") { dll_64bit } else { dll_32bit };
+            let loadable = if cfg!(target_pointer_width = "64") {
+                dll_64bit || (dll_32bit && bridge_path().is_some())
+            } else {
+                dll_32bit
+            };
             Rp1210Implementation {
                 api_name: api.to_string(),
                 vendor: vi.and_then(|v| v.get("name")).cloned().unwrap_or_default(),

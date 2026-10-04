@@ -147,3 +147,7 @@ csu_settings.json
 J1939DA JUN2024.xlsx
 # Licensed SAE J1939 Digital Annex workbooks (any release)
 J1939DA*.xls*
+
+# RP1210 bridge build output (rebuild with rp1210_bridgeuild.bat)
+rp1210_bridge/bin/
+rp1210_bridge/obj/

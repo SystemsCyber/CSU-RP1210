@@ -811,10 +811,15 @@ class CSU_RP1210(QMainWindow):
             i+=1
             progress.setValue(3+i)
         
-        # Not every adapter has J1708 (e.g. PEAK); warn only when no CAN-based client connected.
-        if self.client_ids["J1939"] is None and self.client_ids["CAN"] is None:
-            QMessageBox.information(self,"RP1210 Client Not Connected.","The default RP1210 Device was not found or is unplugged. Please reconnect your Vehicle Diagnostic Adapter (VDA) and select the RP1210 device to use.")
+        progress.close()
         progress.deleteLater()
+        # Not every adapter has J1708 (e.g. PEAK); warn only when no CAN-based client connected.
+        # The box is shown from the event loop: opening it while the window-modal progress
+        # dialog is still on screen (connection attempts can take seconds) crashes Qt.
+        if self.client_ids["J1939"] is None and self.client_ids["CAN"] is None:
+            QTimer.singleShot(0, lambda: QMessageBox.information(self, "RP1210 Client Not Connected.",
+                "The default RP1210 Device was not found or is unplugged. Please reconnect your Vehicle "
+                "Diagnostic Adapter (VDA) and select the RP1210 device to use."))
 
     def check_connections(self):
         '''

@@ -2,12 +2,14 @@
 Build a portable, single-file CSU_RP1210.exe with PyInstaller.
 
     python build_exe.py            # 64-bit exe with the current Python
-    py -3.10-32 build_exe.py       # 32-bit exe (for 32-bit-only RP1210 drivers such as DG DPA5)
+    py -3.10-32 build_exe.py       # optional 32-bit exe (the 64-bit exe already reaches 32-bit drivers via the bridge)
 
 Output: dist/CSU_RP1210.exe (64-bit) or dist/CSU_RP1210_x86.exe (32-bit).
 
-Bundled: icons, version.json, the skeleton J1939db.json, j1939_units.json and the
-decode test vectors. NOT bundled: licensed databases or Digital Annex workbooks.
+Bundled: icons, version.json, the skeleton J1939db.json, j1939_units.json, the
+decode test vectors and (64-bit) the RP1210 32-to-64-bit bridge, so the 64-bit
+exe can also use 32-bit-only vendor drivers such as DG DPA5 (build it first with
+rp1210_bridge/build.bat). NOT bundled: licensed databases or Digital Annex workbooks.
 Put J1939db.licensed.json / J1939db.us.licensed.json next to the exe (or create
 them with File > J1939 Database); settings, the last RP1210 connection and
 CSU_RP1210.log are written there too, so the folder stays portable.
@@ -37,6 +39,16 @@ def main():
             "--exclude-module", "pytest", "--exclude-module", "tkinter"]
     for src, dest in DATA:
         args += ["--add-data", f"{os.path.join(ROOT, src)}{SEP}{dest}"]
+    if is_64bit and os.name == "nt":
+        # 32-to-64-bit RP1210 bridge: lets the 64-bit exe use 32-bit-only vendor DLLs.
+        bridge_bin = os.path.join(ROOT, "rp1210_bridge", "bin")
+        bridge = [os.path.join(bridge_bin, f) for f in ("rp1210_bridge64.dll", "rp1210_host32.exe")]
+        if all(os.path.exists(f) for f in bridge):
+            for f in bridge:
+                args += ["--add-binary", f"{f}{SEP}."]
+        else:
+            print("warning: rp1210_bridge/bin not built (run rp1210_bridge/build.bat); "
+                  "the exe will not support 32-bit-only RP1210 drivers")
     args.append(os.path.join(ROOT, "CSU_RP1210.py"))
     print(" ".join(args))
     subprocess.run(args, cwd=ROOT, check=True)

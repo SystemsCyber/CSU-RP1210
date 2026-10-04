@@ -23,6 +23,22 @@ def get_storage_path():
 
 BUFFER_SIZE = 8192
 
+# 32-to-64-bit RP1210 bridge (rp1210_bridge/): lets this 64-bit program use
+# vendors' 32-bit-only RP1210 DLLs through rp1210_host32.exe.
+BRIDGE_DLL = "rp1210_bridge64.dll"
+
+
+def find_rp1210_bridge():
+    """Path of rp1210_bridge64.dll (with rp1210_host32.exe beside it), or None."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [getattr(sys, "_MEIPASS", None), os.path.dirname(sys.executable), here,
+                  os.path.join(here, "rp1210_bridge", "bin")]
+    for d in filter(None, candidates):
+        dll = os.path.join(d, BRIDGE_DLL)
+        if os.path.exists(dll) and os.path.exists(os.path.join(d, "rp1210_host32.exe")):
+            return dll
+    return None
+
 
 def dll_is_64bit(path):
     """True for an x64/ARM64 DLL, False for x86, None if the PE header cannot be read."""
@@ -152,6 +168,7 @@ class RP1210Class():
         self.nClientID = None
         self.ucTxRxBuffer = (c_char*BUFFER_SIZE)()
         self.dll_name = dll_name
+        self.bridge_target = None
         self.dll_path = self.find_dll_path()
         self.create_RP1210_functions()
         
@@ -177,6 +194,11 @@ class RP1210Class():
                 return dll_path
             mismatched.append(dll_path)
         if mismatched:
+            bridge = find_rp1210_bridge() if is_64bit and sys.platform == "win32" else None
+            if bridge:
+                logger.info("Only a 32-bit {}.dll is installed; using the RP1210 bridge {}".format(self.dll_name, bridge))
+                self.bridge_target = self.dll_name
+                return bridge
             logger.warning("Only a {}-bit {}.dll is installed ({}); this is a {}-bit program. Use the {}-bit "
                            "CSU_RP1210 build for this adapter.".format(32 if is_64bit else 64, self.dll_name,
                                                                         mismatched[0], 64 if is_64bit else 32,
@@ -206,6 +228,8 @@ class RP1210Class():
         logger.debug("Loading the RP1210 driver file at {}".format(self.dll_path))
         try:
             RP1210DLL = windll.LoadLibrary(self.dll_path)
+            if self.bridge_target:
+                RP1210DLL.RP1210Bridge_SetTarget(c_char_p(self.bridge_target.encode("ascii")))
         except:
             logger.debug(traceback.format_exc())
             logger.info("If the RP1210 DLL fails to load, check that its bitness matches this program "

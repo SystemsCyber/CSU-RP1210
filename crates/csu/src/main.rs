@@ -143,7 +143,14 @@ fn devices() {
                 (false, true) => "32-bit only",
                 _ => "DLL not found",
             };
-            let note = if imp.loadable { "" } else { "  [not loadable by this build]" };
+            let via_bridge = cfg!(target_pointer_width = "64") && !imp.dll_64bit && imp.dll_32bit && imp.loadable;
+            let note = if via_bridge {
+                "  [via RP1210 32-to-64-bit bridge]"
+            } else if imp.loadable {
+                ""
+            } else {
+                "  [not loadable by this build]"
+            };
             println!("  {} — {} (RP1210 {}, {}){}", imp.api_name, imp.vendor, imp.rp1210_version, bits, note);
             for d in &imp.devices {
                 println!("      device {}: {} {}", d.id, d.name, d.description);

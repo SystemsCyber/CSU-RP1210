@@ -10,7 +10,7 @@ python build_exe.py            # builds dist\CSU_RP1210.exe (64-bit) with PyInst
 py -3.10-32 build_exe.py       # builds dist\CSU_RP1210_x86.exe (32-bit)
 ```
 
-- **Which build to use:** the 64-bit exe loads 64-bit RP1210 drivers, such as PEAK's PEAKRP32. Use the 32-bit build for adapters whose RP1210 driver is 32-bit only, such as some DG DPA5 installs. `csu devices` shows which drivers you have.
+- **Which build to use:** the 64-bit exe loads 64-bit RP1210 drivers, such as PEAK's PEAKRP32, directly. It reaches 32-bit-only drivers, such as DG DPA5, through the bundled [RP1210 32-to-64-bit bridge](rp1210_bridge/README.md); build that first with `rp1210_bridgeuild.bat`. `csu devices` shows which drivers you have and which go through the bridge.
 - **Files kept next to the exe:** `J1939db.licensed.json` / `J1939db.us.licensed.json` (create them with File > J1939 Database), `csu_settings.json`, `Last_RP1210_Connection.json` and `CSU_RP1210.log`. The folder is self-contained.
 - **Multi-channel adapters:** the RP1210 dialog has a **Channel** selector (for example, channel 4 of a PEAK PCAN-PCI Express FD). It is sent to the driver as `Channel=N`.
 
