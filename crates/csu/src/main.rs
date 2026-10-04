@@ -16,7 +16,8 @@ use std::time::{Duration, Instant};
 #[derive(Parser)]
 #[command(name = "csu", version, about = "CSU-RP1210 heavy-vehicle network tool")]
 struct Cli {
-    /// J1939 database (defaults: $CSU_J1939DB, J1939db.licensed.json, J1939db.json).
+    /// J1939 database file (default search: $CSU_J1939DB, then J1939db.licensed.json or
+    /// J1939db.us.licensed.json per --units, then the skeleton J1939db.json).
     #[arg(long, global = true)]
     db: Option<PathBuf>,
     /// Additional data packs layered over the database (repeatable).
@@ -206,7 +207,7 @@ fn summary(cli: &Cli, spec: &str) -> Result<(), BusError> {
     let span = tree.last_ts - tree.first_ts.unwrap_or(tree.last_ts);
     println!("{frames} frames over {span:.1} s (processed in {:.1} ms)", elapsed.as_secs_f64() * 1e3);
     for (ch, c) in &tree.channels {
-        println!("channel {ch} {}: {} frames, {} TP aborts", c.name, c.count, c.tp_aborts);
+        println!("channel {ch} {}: {} frames, {} TP aborts, {} error/status frames", c.name, c.count, c.tp_aborts, c.error_frames);
         for s in c.sources.values() {
             let mut extra = String::new();
             if let Some(n) = &s.claimed_name {
@@ -221,7 +222,13 @@ fn summary(cli: &Cli, spec: &str) -> Result<(), BusError> {
             println!("  SA {:3} (0x{:02X}) {:<32} {:>8} frames{extra}", s.sa, s.sa, db.sa_name(s.sa), s.count);
             for n in s.pgns.values() {
                 let (label, name) = db.pgn_label(n.pgn);
-                let period = n.period.map(|p| format!("{:8.1} ms", p * 1e3)).unwrap_or_else(|| "       — ".into());
+                let period = match (n.period, n.min_interval, n.max_interval) {
+                    (Some(p), Some(lo), Some(hi)) if hi - lo >= 0.001 => {
+                        format!("{:8.1} ms ({:.0}-{:.0})", p * 1e3, lo * 1e3, hi * 1e3)
+                    }
+                    (Some(p), _, _) => format!("{:8.1} ms", p * 1e3),
+                    _ => "       — ".into(),
+                };
                 let dest = if n.da == 0xFF { String::new() } else { format!(" → {}", n.da) };
                 let tp = if n.reassembled { " [TP]" } else { "" };
                 println!(
@@ -248,7 +255,9 @@ fn build_tree(bus: &mut dyn Bus) -> Result<(NetworkTree, u64, Duration), BusErro
     let mut frames = 0u64;
     drain(bus, |f| {
         frames += 1;
-        if f.is_extended() {
+        if f.flags.has(csu_bus::FrameFlags::ERROR) {
+            tree.observe_error(f);
+        } else if f.is_extended() {
             stack.feed(f, &mut events);
             for e in events.drain(..) {
                 match e {

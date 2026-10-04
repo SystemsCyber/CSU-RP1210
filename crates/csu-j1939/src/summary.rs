@@ -27,8 +27,14 @@ pub struct PgnNode {
     pub count: u64,
     pub first_ts: f64,
     pub last_ts: f64,
-    /// Smoothed inter-arrival time in seconds.
+    /// Average inter-arrival time in seconds over the session.
     pub period: Option<f64>,
+    /// Most recent, shortest and longest inter-arrival times in seconds.
+    /// Some senders alternate intervals (e.g. 68/68/93 ms), so the last
+    /// interval alone (what PCAN-View shows as cycle time) can mislead.
+    pub last_interval: Option<f64>,
+    pub min_interval: Option<f64>,
+    pub max_interval: Option<f64>,
     pub last_data: Vec<u8>,
     n: u64,
     mean: Vec<f64>,
@@ -41,10 +47,10 @@ impl PgnNode {
         if self.count > 0 {
             let dt = ts - self.last_ts;
             if dt >= 0.0 {
-                self.period = Some(match self.period {
-                    Some(p) => 0.9 * p + 0.1 * dt,
-                    None => dt,
-                });
+                self.period = Some((ts - self.first_ts) / self.count as f64);
+                self.last_interval = Some(dt);
+                self.min_interval = Some(self.min_interval.map_or(dt, |m| m.min(dt)));
+                self.max_interval = Some(self.max_interval.map_or(dt, |m| m.max(dt)));
             }
         } else {
             self.first_ts = ts;
@@ -104,6 +110,8 @@ pub struct ChannelNode {
     /// 11-bit identifiers (not J1939), keyed by CAN ID.
     pub standard: BTreeMap<u32, PgnNode>,
     pub tp_aborts: u64,
+    /// Error and adapter status frames (not counted as traffic).
+    pub error_frames: u64,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -136,8 +144,17 @@ impl NetworkTree {
         }
     }
 
-    /// Record an 11-bit (non-J1939) frame.
+    /// Record an error or adapter status frame.
+    pub fn observe_error(&mut self, frame: &csu_bus::Frame) {
+        self.channels.entry(frame.channel).or_default().error_frames += 1;
+    }
+
+    /// Record an 11-bit (non-J1939) frame. Error/status frames are counted separately.
     pub fn observe_standard(&mut self, frame: &csu_bus::Frame) {
+        if frame.flags.has(csu_bus::FrameFlags::ERROR) {
+            self.observe_error(frame);
+            return;
+        }
         self.total += 1;
         self.touch(frame.timestamp);
         let ch = self.channels.entry(frame.channel).or_default();
@@ -193,6 +210,7 @@ impl NetworkTree {
                 name: if c.name.is_empty() { format!("ch{ch}") } else { c.name.clone() },
                 count: c.count,
                 tp_aborts: c.tp_aborts,
+                error_frames: c.error_frames,
                 sources: c.sources.values().map(|s| source_view(s, db)).collect(),
                 standard: c.standard.values().map(|n| pgn_view(n, db)).collect(),
             })
@@ -276,6 +294,11 @@ fn source_view(s: &SourceNode, db: &CompiledDb) -> SourceView {
     }
 }
 
+/// Seconds to milliseconds, one decimal place.
+fn ms(s: f64) -> f64 {
+    (s * 1000.0 * 10.0).round() / 10.0
+}
+
 fn pgn_view(n: &PgnNode, db: &CompiledDb) -> PgnView {
     let (label, name) = db.pgn_label(n.pgn);
     PgnView {
@@ -286,7 +309,10 @@ fn pgn_view(n: &PgnNode, db: &CompiledDb) -> PgnView {
         label: label.to_string(),
         name: name.to_string(),
         count: n.count,
-        period_ms: n.period.map(|p| (p * 1000.0 * 10.0).round() / 10.0),
+        period_ms: n.period.map(ms),
+        last_ms: n.last_interval.map(ms),
+        min_ms: n.min_interval.map(ms),
+        max_ms: n.max_interval.map(ms),
         last_ts: n.last_ts,
         data: csu_bus::hex(&n.last_data),
         mean: n.mean.iter().map(|m| (m * 10.0).round() / 10.0).collect(),
@@ -330,6 +356,7 @@ pub struct ChannelView {
     pub name: String,
     pub count: u64,
     pub tp_aborts: u64,
+    pub error_frames: u64,
     pub sources: Vec<SourceView>,
     pub standard: Vec<PgnView>,
 }
@@ -368,6 +395,9 @@ pub struct PgnView {
     pub name: String,
     pub count: u64,
     pub period_ms: Option<f64>,
+    pub last_ms: Option<f64>,
+    pub min_ms: Option<f64>,
+    pub max_ms: Option<f64>,
     pub last_ts: f64,
     pub data: String,
     pub mean: Vec<f64>,
@@ -422,6 +452,7 @@ mod tests {
         let node = &src.pgns[&(0xF004, 0xFF, false)];
         assert_eq!(node.count, 10);
         assert!((node.period.unwrap() - 0.1).abs() < 1e-9);
+        assert!((node.last_interval.unwrap() - 0.1).abs() < 1e-9);
         let std = node.std_dev();
         assert_eq!(std[0], 0.0);
         assert!(std[2] > 2.9 && std[2] < 3.1);
@@ -431,5 +462,32 @@ mod tests {
         let snap = t.snapshot(&CompiledDb::default(), Some(&Selection { ch: 0, sa: 0, pgn: 0xF004, da: 0xFF, reassembled: false, standard: false }));
         assert_eq!(snap.total, 11);
         assert_eq!(snap.detail.unwrap().node.can_id, Some(0x18F00400));
+    }
+
+    #[test]
+    fn alternating_intervals_report_average_min_max_last() {
+        let mut t = NetworkTree::default();
+        // 68, 68, 93 ms pattern seen from a GPS on the live bus.
+        let mut ts = 0.0;
+        for dt in [0.0, 0.068, 0.068, 0.093, 0.068, 0.068, 0.093] {
+            ts += dt;
+            t.observe(&msg(ts, 127251, 44, &[0x42, 0xFF, 0xFF, 0xFF, 0x7F, 0xFF, 0xFF, 0xFF]));
+        }
+        let n = &t.channels[&0].sources[&44].pgns[&(127251, 0xFF, false)];
+        assert!((n.period.unwrap() - 0.07633).abs() < 1e-4);
+        assert!((n.min_interval.unwrap() - 0.068).abs() < 1e-9);
+        assert!((n.max_interval.unwrap() - 0.093).abs() < 1e-9);
+        assert!((n.last_interval.unwrap() - 0.093).abs() < 1e-9);
+    }
+
+    #[test]
+    fn status_frames_are_not_traffic() {
+        let mut t = NetworkTree::default();
+        let mut f = csu_bus::Frame::new(0x001, false, &[0, 0, 0, 0]);
+        f.flags.set(csu_bus::FrameFlags::ERROR, true);
+        t.observe_standard(&f);
+        assert_eq!(t.total, 0);
+        assert!(t.channels[&0].standard.is_empty());
+        assert_eq!(t.channels[&0].error_frames, 1);
     }
 }

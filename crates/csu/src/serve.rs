@@ -97,7 +97,9 @@ fn capture(mut bus: Box<dyn Bus>, shared: Arc<Shared>, record: Option<PathBuf>) 
                         tree.set_channel_name(f.channel, n);
                     }
                 }
-                if f.is_extended() {
+                if f.flags.has(csu_bus::FrameFlags::ERROR) {
+                    tree.observe_error(&f);
+                } else if f.is_extended() {
                     stack.feed(&f, &mut events);
                     for e in events.drain(..) {
                         match e {

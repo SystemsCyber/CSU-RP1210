@@ -193,8 +193,10 @@ function render(msg) {
     const chKey = `ch:${ch.ch}`;
     const chLi = ensureRow(chKey, tree, "lvl1", () => toggle(chKey, chLi), ci);
     chLi.classList.toggle("collapsed", collapsed.has(chKey));
-    setRow(chLi, collapsed.has(chKey) ? "▸" : "▾", esc(ch.name), `${ch.sources.length} SAs`, nf.format(ch.count),
-           ch.tp_aborts ? `${ch.tp_aborts} TP sessions aborted` : "");
+    const chNotes = [ch.tp_aborts && `${ch.tp_aborts} TP sessions aborted`,
+                     ch.error_frames && `${ch.error_frames} error/status frames`].filter(Boolean).join("\n");
+    const chErr = ch.error_frames ? ` <span class="mil" title="${ch.error_frames} error/status frames">${nf.format(ch.error_frames)} err</span>` : "";
+    setRow(chLi, collapsed.has(chKey) ? "▸" : "▾", esc(ch.name) + chErr, `${ch.sources.length} SAs`, nf.format(ch.count), chNotes);
     const chUl = childUl(chLi);
 
     ch.sources.forEach((s, si) => {
@@ -227,7 +229,8 @@ function render(msg) {
         const tp = p.reassembled ? ` <span class="badge">TP</span>` : "";
         const lbl = p.label ? ` ${esc(p.label)}` : "";
         setRow(li, "", `<span class="mono">${p.pgn}</span>${dest}${lbl}${tp}`,
-               p.period_ms != null ? `${p.period_ms.toFixed(0)} ms` : "", nf.format(p.count), p.name);
+               p.period_ms != null ? `${p.period_ms.toFixed(0)} ms` : "", nf.format(p.count),
+               [p.name, intervalText(p)].filter(Boolean).join("\n"));
         li.firstChild.classList.toggle("selected", selection && k === keyOf(selection));
       });
     });
@@ -253,6 +256,12 @@ function render(msg) {
   renderDetail(snap.detail);
 }
 
+function intervalText(n) {
+  if (n.period_ms == null) return "";
+  const spread = n.min_ms != null && n.max_ms - n.min_ms >= 1 ? ` (${n.min_ms}–${n.max_ms} ms, last ${n.last_ms} ms)` : "";
+  return `avg ${n.period_ms} ms${spread}`;
+}
+
 function renderDetail(d) {
   const el = $("detail");
   if (!d) { if (!selection) return; el.innerHTML = `<div class="empty">Waiting for data…</div>`; return; }
@@ -268,7 +277,7 @@ function renderDetail(d) {
     n.da !== 255 && !sel.standard && `DA ${n.da}`,
     n.can_id != null && `ID ${n.can_id.toString(16).toUpperCase().padStart(8, "0")}`,
     `${nf.format(n.count)} msgs`,
-    n.period_ms != null && `${n.period_ms} ms`,
+    intervalText(n),
     `${bytes.length} bytes`,
     n.reassembled && "reassembled (TP)",
   ].filter(Boolean).join(" · ");

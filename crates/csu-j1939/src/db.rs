@@ -360,6 +360,16 @@ impl CompiledDb {
                         text: Some(s.trim().to_string()),
                     }
                 }
+                SpnKind::Bytes if spn.length.is_none() => {
+                    let start = slot.start_bit.map(|b| (b / 8) as usize).unwrap_or(0).min(data.len());
+                    SpnValue {
+                        spn: spn.spn,
+                        raw: None,
+                        value: None,
+                        status: if start < data.len() { SpnStatus::Valid } else { SpnStatus::Missing },
+                        text: Some(csu_bus::hex(&data[start..])),
+                    }
+                }
                 _ => self.decode_numeric(spn, slot.start_bit, data),
             };
             out.push(v);
@@ -399,8 +409,11 @@ fn parse_spn(spn: u32, v: &Value) -> SpnDef {
     let resolution = num(v.get("Resolution")).unwrap_or(0.0);
     // Legacy-schema resolution codes: -2 = ASCII, -3 = binary (raw integer).
     let binary = resolution == -3.0 || units.eq_ignore_ascii_case("binary");
-    let kind = if units.eq_ignore_ascii_case("ASCII") || length.is_none() {
+    let kind = if units.eq_ignore_ascii_case("ASCII") {
         SpnKind::Ascii
+    } else if length.is_none() {
+        // Variable-length, non-text fields (e.g. NAME, proprietary data): raw bytes.
+        SpnKind::Bytes
     } else if resolution > 0.0 || binary {
         SpnKind::Numeric
     } else if units.eq_ignore_ascii_case("bit") || units.eq_ignore_ascii_case("binary") {
@@ -613,6 +626,17 @@ mod tests {
         assert_eq!(UnitSystem::Metric.other(), UnitSystem::Us);
         let db = CompiledDb::from_json(&json!({"_meta": {"units": "us"}, "J1939PGNdb": {}, "J1939SPNdb": {}}));
         assert_eq!(db.meta.units, Some(UnitSystem::Us));
+    }
+
+    #[test]
+    fn variable_length_binary_is_bytes_not_text() {
+        let db = CompiledDb::from_json(&json!({
+            "J1939PGNdb": {"60928": {"Label": "AC", "Name": "X", "PGNLength": "8", "SPNs": [2848], "SPNStartBits": [[0]]}},
+            "J1939SPNdb": {"2848": {"Name": "Name", "SPNLength": "Variable", "Resolution": 0, "Units": ""}}
+        }));
+        assert_eq!(db.spns[&2848].kind, SpnKind::Bytes);
+        let v = db.decode(60928, &[0xC8, 0x2C, 0x42, 0x0E, 0x00, 0x00, 0x00, 0x51]);
+        assert_eq!(v[0].text.as_deref(), Some("C82C420E00000051"));
     }
 
     #[test]
