@@ -54,12 +54,14 @@ class SelectRP1210(QDialog):
             self.protocol = file_contents["protocol"]
             self.deviceID = file_contents["deviceID"]
             self.speed    = file_contents["speed"]
+            self.channel  = file_contents.get("channel", 1)
         except:
             logger.warning(traceback.format_exc())
             self.dll_name = False
             self.protocol = False
             self.deviceID = False
             self.speed = False
+            self.channel = 1
         
     
     def show_dialog(self):
@@ -85,6 +87,12 @@ class SelectRP1210(QDialog):
         self.protocol_combo_box.setInsertPolicy(QComboBox.NoInsert)
         self.protocol_combo_box.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.protocol_combo_box.activated.connect(self.fill_speed)
+
+        channel_label = QLabel("Channel (multi-channel adapters):")
+        self.channel_combo_box = QComboBox()
+        self.channel_combo_box.setInsertPolicy(QComboBox.NoInsert)
+        self.channel_combo_box.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.device_channels = {}
 
         speed_label = QLabel("Available Speed Settings")
         self.speed_combo_box = QComboBox()
@@ -118,6 +126,8 @@ class SelectRP1210(QDialog):
         self.v_layout.addWidget(self.device_combo_box)
         self.v_layout.addWidget(protocol_label)
         self.v_layout.addWidget(self.protocol_combo_box)
+        self.v_layout.addWidget(channel_label)
+        self.v_layout.addWidget(self.channel_combo_box)
         self.v_layout.addWidget(speed_label)
         self.v_layout.addWidget(self.speed_combo_box)
         self.v_layout.addWidget(self.buttons)
@@ -199,6 +209,9 @@ class SelectRP1210(QDialog):
                     device_name = self.vendor_configs[self.api_string][key]["DeviceName"]
                 except KeyError:
                     device_name = "Device name not provided"
+                channel_counts = [int(c) for c in (device_MultiCANChannels, device_MultiJ1939Channels)
+                                  if c is not None and str(c).strip().isdigit()]
+                self.device_channels[str(device_id).strip()] = max(channel_counts) if channel_counts else 1
                 device_combo_box_entry = "{}: {}, {}".format(device_id,device_name,device_description)
                 if len(device_combo_box_entry) > 0:
                     self.device_combo_box.addItem(device_combo_box_entry)
@@ -254,9 +267,29 @@ class SelectRP1210(QDialog):
             logger.warning(traceback.format_exc())
         self.fill_speed()
 
+    def saved_channel(self):
+        try:
+            with open(self.connections_file) as f:
+                return int(json.load(f).get("channel", 1))
+        except (OSError, ValueError, TypeError, AttributeError):
+            return 1
+
+    def fill_channel(self):
+        self.channel_combo_box.clear()
+        count = self.device_channels.get(str(self.device_id), 1)
+        self.channel_combo_box.addItems([str(c) for c in range(1, count + 1)])
+        self.channel_combo_box.setEnabled(count > 1)
+        try:
+            previous = int(getattr(self, "channel", None) or self.saved_channel())
+        except (TypeError, ValueError):
+            previous = 1
+        if 1 <= previous <= count:
+            self.channel_combo_box.setCurrentIndex(previous - 1)
+
     def fill_speed(self):
         if self.rp1201_missing:
             return
+        self.fill_channel()
         self.speed_combo_box.clear()
         if self.protocol_combo_box.currentText() == "":
                 self.protocol_combo_box.setCurrentIndex(0)
@@ -285,12 +318,14 @@ class SelectRP1210(QDialog):
         self.deviceID = int(self.device_combo_box.itemText(device_index).split(":")[0].strip())
         self.speed = self.speed_combo_box.itemText(speed_index)
         self.protocol = self.protocol_combo_box.itemText(protocol_index).split(":")[0].strip()
+        self.channel = int(self.channel_combo_box.currentText() or 1)
 
     def reject_RP1210(self):
         self.dll_name = None
         self.protocol = None
         self.deviceID = None
         self.speed = None
+        self.channel = None
 
 class Standalone(QMainWindow):
     def __init__(self):

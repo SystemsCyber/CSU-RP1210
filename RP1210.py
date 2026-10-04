@@ -5,6 +5,7 @@ from ctypes import *
 from ctypes.wintypes import HWND
 import json
 import os
+import sys
 import threading
 import time
 import struct
@@ -15,9 +16,26 @@ import logging
 logger = logging.getLogger(__name__)
 
 def get_storage_path():
+    """Folder for user files: next to CSU_RP1210.exe when frozen (portable), else the working directory."""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
     return os.getcwd()
 
 BUFFER_SIZE = 8192
+
+
+def dll_is_64bit(path):
+    """True for an x64/ARM64 DLL, False for x86, None if the PE header cannot be read."""
+    try:
+        with open(path, "rb") as f:
+            header = f.read(4096)
+        pe = struct.unpack("<L", header[0x3C:0x40])[0]
+        if header[pe:pe + 4] != b"PE\0\0":
+            return None
+        machine = struct.unpack("<H", header[pe + 4:pe + 6])[0]
+        return {0x8664: True, 0xAA64: True, 0x014C: False}.get(machine)
+    except (OSError, struct.error):
+        return None
 
 class RP1210ReadMessageThread(threading.Thread):
     '''This thread is designed to receive messages from the vehicle diagnostic
@@ -127,7 +145,7 @@ class RP1210ReadMessageThread(threading.Thread):
 class RP1210Class():
     """A class to access RP1210 libraries for different devices."""
     def __init__(self, dll_name):
-        """
+        r"""
         Load the Windows Device Library
         The input argument is the dll_name from one of the manufacturers DLLs in the c:\Windows directory  
         """
@@ -139,13 +157,31 @@ class RP1210Class():
         
     
     def find_dll_path(self):
-        places_to_look = [r'C:\Windows\SysWOW64', r'C:\Windows',r'C:\Windows\System32']
-        for place in places_to_look:
-            logger.debug("looking for RP1210 DLL in {}".format(place))
-            dll_path = os.path.join(place,self.dll_name + '.dll')
-            if os.path.exists(dll_path):    
+        """
+        Find the vendor DLL that matches this process: a 64-bit process needs a
+        64-bit DLL (System32 on 64-bit Windows), a 32-bit process a 32-bit DLL
+        (SysWOW64). A mismatched DLL cannot be loaded.
+        """
+        is_64bit = sys.maxsize > 2**32
+        windir = os.environ.get("WINDIR", r"C:\Windows")
+        order = ["System32", "", "SysWOW64"] if is_64bit else ["SysWOW64", "", "System32"]
+        mismatched = []
+        for sub in order:
+            dll_path = os.path.join(windir, sub, self.dll_name + '.dll')
+            logger.debug("looking for RP1210 DLL at {}".format(dll_path))
+            if not os.path.exists(dll_path):
+                continue
+            dll_64bit = dll_is_64bit(dll_path)
+            if dll_64bit is None or dll_64bit == is_64bit:
                 logger.info("Found RP1210 DLL at {}".format(dll_path))
                 return dll_path
+            mismatched.append(dll_path)
+        if mismatched:
+            logger.warning("Only a {}-bit {}.dll is installed ({}); this is a {}-bit program. Use the {}-bit "
+                           "CSU_RP1210 build for this adapter.".format(32 if is_64bit else 64, self.dll_name,
+                                                                        mismatched[0], 64 if is_64bit else 32,
+                                                                        32 if is_64bit else 64))
+            return mismatched[0]
         logger.warning("Could not find RP1210 DLL. Please make sure drivers are installed.")
         logger.debug("We'll try to use just the filename and see what happens.")
         return self.dll_name + '.dll'
@@ -172,8 +208,8 @@ class RP1210Class():
             RP1210DLL = windll.LoadLibrary(self.dll_path)
         except:
             logger.debug(traceback.format_exc())
-            logger.info("\nIf RP1210 DLL fails to load, please check to be sure you are using"
-                + " a 32-bit version of Python and you have the correct drivers for the VDA installed.")
+            logger.info("If the RP1210 DLL fails to load, check that its bitness matches this program "
+                        "({}-bit) and that the drivers for the VDA are installed.".format(64 if sys.maxsize > 2**32 else 32))
             return False
 
         # Define windows prototype functions:
@@ -235,17 +271,20 @@ class RP1210Class():
             logger.debug(traceback.format_exc())
         return True
 
-    def get_client_id(self, protocol, deviceID, speed):
+    def get_client_id(self, protocol, deviceID, speed, channel=None):
         """
         Loads the DLL in to Python and assignes self.nClientID. This is used to reference the DLL client in the app.
         Saves successful clients to a json file so it doesn't ask the user for input each time.
         """
         QCoreApplication.processEvents()
         nClientID = None
+        params = []
         if len(speed) > 0 and (protocol == "J1939"  or protocol == "CAN" or protocol == "ISO15765"):
-            protocol_bytes = bytes(protocol + ":Baud={}".format(speed),'ascii')
-        else:
-            protocol_bytes = bytes(protocol,'ascii')
+            params.append("Baud={}".format(speed))
+        # RP1210C multi-channel adapters (e.g. PEAK PCAN-PCI Express FD): select the channel.
+        if channel and int(channel) > 1 and protocol in ("J1939", "CAN", "ISO15765"):
+            params.append("Channel={}".format(int(channel)))
+        protocol_bytes = bytes(protocol + (":" + ",".join(params) if params else ""), 'ascii')
         logger.debug("Connecting with ClientConnect using " + repr(protocol_bytes))
         try:
             nClientID = self.ClientConnect(HWND(None), c_short(deviceID), protocol_bytes, BUFFER_SIZE, BUFFER_SIZE, 0)

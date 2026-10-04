@@ -1,6 +1,19 @@
 # CSU-RP1210
  Heavy Vehicle diagnostic prototyping and training software for ATA/TMC RP1210 compatible devices.
 
+## Portable Windows executable
+
+`CSU_RP1210.exe` is a single-file build of the GUI. It needs no Python installation; copy it to any folder and run it.
+
+```
+python build_exe.py            # builds dist\CSU_RP1210.exe (64-bit) with PyInstaller
+py -3.10-32 build_exe.py       # builds dist\CSU_RP1210_x86.exe (32-bit)
+```
+
+- **Which build to use:** the 64-bit exe loads 64-bit RP1210 drivers, such as PEAK's PEAKRP32. Use the 32-bit build for adapters whose RP1210 driver is 32-bit only, such as some DG DPA5 installs. `csu devices` shows which drivers you have.
+- **Files kept next to the exe:** `J1939db.licensed.json` / `J1939db.us.licensed.json` (create them with File > J1939 Database), `csu_settings.json`, `Last_RP1210_Connection.json` and `CSU_RP1210.log`. The folder is self-contained.
+- **Multi-channel adapters:** the RP1210 dialog has a **Channel** selector (for example, channel 4 of a PEAK PCAN-PCI Express FD). It is sent to the driver as `Channel=N`.
+
 ## Rust core (next generation, in progress)
 
 A cross-platform Rust core lives in `crates/`. It supports RP1210 on Windows, PEAK PCAN-Basic with CAN FD on Windows and Linux, SocketCAN on Linux, and candump log replay. See [docs/ARCHITECTURE_PROPOSAL.md](docs/ARCHITECTURE_PROPOSAL.md) for the architecture and [model/sysml](model/sysml/README.md) for the SysML v2 model.

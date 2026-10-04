@@ -81,21 +81,31 @@ from DigitalAnnexSelect import DigitalAnnexDialog
 import j1939db_tools
 from ISO15765 import *
 
-if sys.maxsize > 2**32:
-    print("Must run on 32-bit Python.")
-    sys.exit()
-
 import logging
 logger.addHandler(logging.StreamHandler(sys.stdout))
 logger.setLevel(logging.DEBUG)
 
-module_directory = os.getcwd()
+# Bundled resources (icons, version.json, skeleton J1939db.json) live next to
+# this file, or in the PyInstaller bundle when running as CSU_RP1210.exe.
+# User files (licensed databases, settings, logs) live in get_storage_path().
+module_directory = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+
+if getattr(sys, "frozen", False):
+    log_file = logging.FileHandler(os.path.join(get_storage_path(), "CSU_RP1210.log"), mode="w")
+    log_file.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logging.getLogger().addHandler(log_file)
+    logging.getLogger().setLevel(logging.DEBUG)
+
+# RP1210 DLLs must match the process bitness: a 64-bit build loads 64-bit vendor
+# DLLs (e.g. PEAKRP32 from System32); 32-bit-only DLLs need a 32-bit build.
+logger.info("Running {}-bit Python {}".format(64 if sys.maxsize > 2**32 else 32, sys.version.split()[0]))
 
 try:
-    with open('version.json') as f:
+    with open(os.path.join(module_directory, 'version.json')) as f:
         CSU_RP1210_version = json.load(f)
-except:
-    print("This is a module that should be run from another program. See the demo code.")
+except OSError:
+    CSU_RP1210_version = {"major": 0, "minor": 0, "patch": 0}
+    logger.warning("version.json not found in {}".format(module_directory))
 
 class CSU_RP1210(QMainWindow):
     def __init__(self):
@@ -177,8 +187,9 @@ class CSU_RP1210(QMainWindow):
         
 
         progress_label.setText("Initializing System Variables")
-        os.system("TASKKILL /F /IM DGServer2.exe")
-        os.system("TASKKILL /F /IM DGServer1.exe")  
+        if sys.platform == "win32":
+            os.system("TASKKILL /F /IM DGServer2.exe")
+            os.system("TASKKILL /F /IM DGServer1.exe")
         
         self.update_rate = 100
 
@@ -679,6 +690,7 @@ class CSU_RP1210(QMainWindow):
         protocol = selection.protocol
         deviceID = selection.deviceID
         speed    = selection.speed
+        channel  = getattr(selection, "channel", 1)
 
         if dll_name is None: #this is what happens when you hit cancel
             return
@@ -708,11 +720,11 @@ class CSU_RP1210(QMainWindow):
         
         # We want to connect to multiple clients with different protocols.
         self.client_ids={}
-        self.client_ids["CAN"] = self.RP1210.get_client_id("CAN", deviceID, "{}".format(speed))
+        self.client_ids["CAN"] = self.RP1210.get_client_id("CAN", deviceID, "{}".format(speed), channel)
         progress.setValue(1)
         self.client_ids["J1708"] = self.RP1210.get_client_id("J1708", deviceID, "Auto")
         progress.setValue(2)
-        self.client_ids["J1939"] = self.RP1210.get_client_id("J1939", deviceID, "{}".format(speed))
+        self.client_ids["J1939"] = self.RP1210.get_client_id("J1939", deviceID, "{}".format(speed), channel)
         progress.setValue(3)
         #self.client_ids["ISO15765"] = self.RP1210.get_client_id("ISO15765", deviceID, "Auto")
         #progress.setValue(3)
@@ -723,7 +735,8 @@ class CSU_RP1210(QMainWindow):
         file_contents={ "dll_name":dll_name,
                         "protocol":protocol,
                         "deviceID":deviceID,
-                        "speed":speed
+                        "speed":speed,
+                        "channel":channel
                        }
         logger.debug(selection.connections_file)
         try:
@@ -798,7 +811,8 @@ class CSU_RP1210(QMainWindow):
             i+=1
             progress.setValue(3+i)
         
-        if self.client_ids["J1939"] is None or self.client_ids["J1708"] is None:
+        # Not every adapter has J1708 (e.g. PEAK); warn only when no CAN-based client connected.
+        if self.client_ids["J1939"] is None and self.client_ids["CAN"] is None:
             QMessageBox.information(self,"RP1210 Client Not Connected.","The default RP1210 Device was not found or is unplugged. Please reconnect your Vehicle Diagnostic Adapter (VDA) and select the RP1210 device to use.")
         progress.deleteLater()
 
