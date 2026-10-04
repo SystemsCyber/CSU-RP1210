@@ -141,3 +141,9 @@ data-packs/private/
 
 # Test fixtures are candump logs and must be committed
 !tests/fixtures/*.log
+
+# Per-user CSU-RP1210 settings (J1939 unit preference)
+csu_settings.json
+J1939DA JUN2024.xlsx
+# Licensed SAE J1939 Digital Annex workbooks (any release)
+J1939DA*.xls*

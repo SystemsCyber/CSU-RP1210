@@ -77,6 +77,8 @@ from RP1210Select import *
 from J1939Tab import *
 from J1587Tab import *
 from ComponentInfoTab import *
+from DigitalAnnexSelect import DigitalAnnexDialog
+import j1939db_tools
 from ISO15765 import *
 
 if sys.maxsize > 2**32:
@@ -111,32 +113,9 @@ class CSU_RP1210(QMainWindow):
         #load the J1939 Database
         progress.setLabel(progress_label)
         # The repository ships a skeleton J1939db.json without SAE content.
-        # A licensed database is found first via $CSU_J1939DB, then
-        # J1939db.licensed.json (git-ignored), then J1939db.json.
-        self.j1939db = {"J1939BitDecodings":{},
-                        "J1939FMITabledb": {},
-                        "J1939LampFlashTabledb": {},
-                        "J1939OBDTabledb": {},
-                        "J1939PGNdb": {},
-                        "J1939SAHWTabledb": {},
-                        "J1939SATabledb": {},
-                        "J1939SPNdb": {} }
-        db_candidates = [os.environ.get("CSU_J1939DB")]
-        for name in ("J1939db.licensed.json", "J1939db.json"):
-            db_candidates += [name, os.path.join(module_directory, name)]
-        for candidate in filter(None, db_candidates):
-            try:
-                with open(candidate,'r') as j1939_file:
-                    self.j1939db.update(json.load(j1939_file))
-                logger.info("Loaded J1939 database from {}".format(candidate))
-                break
-            except FileNotFoundError:
-                continue
-        else:
-            logger.debug("No J1939 database file was found.")
-        if self.j1939db.get("_meta", {}).get("skeleton"):
-            logger.warning("Only the skeleton J1939db.json is loaded. Save a licensed database as "
-                           "J1939db.licensed.json to decode parameter names and values.")
+        # Licensed databases come from File > J1939 Database (DigitalAnnexSelect).
+        self.j1939db = {}
+        self.load_j1939db()
         logger.info("Done Loading J1939db")
         progress.setValue(1)
         QCoreApplication.processEvents()
@@ -266,6 +245,12 @@ class CSU_RP1210(QMainWindow):
         open_logger2.setStatusTip('Open a file from the NMFTA/TU CAN Logger 2')
         open_logger2.triggered.connect(self.open_open_logger2)
         file_menu.addAction(open_logger2)
+
+        j1939_database = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Data_Sheet_48px.png')), 'J1939 &Database...', self)
+        j1939_database.setShortcut('Ctrl+D')
+        j1939_database.setStatusTip('Create the J1939 database from a licensed Digital Annex and choose metric or US units.')
+        j1939_database.triggered.connect(self.open_digital_annex_dialog)
+        file_menu.addAction(j1939_database)
 
 
         exit_action = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Close_Window_48px.png')), '&Quit', self)
@@ -483,6 +468,49 @@ class CSU_RP1210(QMainWindow):
     #     streamHandler.setLevel(logging.CRITICAL)
     #     l.addHandler(streamHandler)    
     #
+    def load_j1939db(self):
+        """
+        Load the J1939 database in place (the tabs hold a reference to this dict).
+        Search order: $CSU_J1939DB, then the licensed database for the preferred
+        units (J1939db.us.licensed.json or J1939db.licensed.json), then the other
+        unit system, then the skeleton J1939db.json.
+        """
+        db = {"J1939BitDecodings":{},
+              "J1939FMITabledb": {},
+              "J1939LampFlashTabledb": {},
+              "J1939OBDTabledb": {},
+              "J1939PGNdb": {},
+              "J1939SAHWTabledb": {},
+              "J1939SATabledb": {},
+              "J1939SPNdb": {} }
+        units = j1939db_tools.read_unit_preference(get_storage_path())
+        candidates = [os.environ.get("CSU_J1939DB")]
+        candidates += j1939db_tools.database_candidates(get_storage_path(), units)
+        candidates += j1939db_tools.database_candidates(module_directory, units)
+        for candidate in filter(None, candidates):
+            try:
+                with open(candidate,'r') as j1939_file:
+                    db.update(json.load(j1939_file))
+                logger.info("Loaded J1939 database from {} (preferred units: {})".format(candidate, units))
+                break
+            except FileNotFoundError:
+                continue
+        else:
+            logger.debug("No J1939 database file was found.")
+        if db.get("_meta", {}).get("skeleton"):
+            logger.warning("Only the skeleton J1939db.json is loaded. Use File > J1939 Database to create "
+                           "a licensed database from the Digital Annex.")
+        self.j1939db.clear()
+        self.j1939db.update(db)
+
+    def open_digital_annex_dialog(self):
+        dialog = DigitalAnnexDialog(self, storage_dir=get_storage_path())
+        dialog.database_created.connect(lambda outputs: self.load_j1939db())
+        dialog.exec_()
+        # The units preference may have changed even without regenerating.
+        self.load_j1939db()
+        self.statusBar().showMessage("J1939 database reloaded ({} PGNs).".format(len(self.j1939db.get("J1939PGNdb", {}))))
+
     def open_open_logger2(self):
         filters = "{} Data Files (*.bin);;All Files (*.*)".format(self.title)
         selected_filter = "CAN Logger 2 Data Files (*.bin)"
