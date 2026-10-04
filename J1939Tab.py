@@ -650,7 +650,7 @@ class J1939Tab(QWidget):
             dm_dict = self.build_dtc_dict(sa, SPN, FMI, OC, CM)
             dm_dict["Raw Hexadecimal"] = bytes_to_hex_string(data[idx:idx+length])
                             
-            engine_torque_mode = self.j1939db["J1939BitDecodings"]["899"]["{:d}".format(data[idx + 5])].strip().capitalize()
+            engine_torque_mode = self.j1939db["J1939BitDecodings"].get("899", {}).get("{:d}".format(data[idx + 5]), "{:d}".format(data[idx + 5])).strip().capitalize()
             boost = "{:0.1f} psi".format(data[idx+ 6] * 0.290075476) 
             engine_speed = "{:0.3f} rpm".format(struct.unpack("<H", data[idx+7:idx+9])[0] * 0.125 )
             engine_load = "{:0.1f} %".format(data[idx+9])
@@ -695,8 +695,9 @@ class J1939Tab(QWidget):
         except KeyError:
             dm_dict["Source"] = "Unknown Source"
 
-        dm_dict["FMI Meaning"] = self.j1939db["J1939FMITabledb"]["{}".format(FMI)]["Name"]
-        dm_dict["FMI Severity"] = self.j1939db["J1939FMITabledb"]["{}".format(FMI)]["Severity"]
+        fmi_entry = self.j1939db["J1939FMITabledb"].get("{}".format(FMI), {})
+        dm_dict["FMI Meaning"] = fmi_entry.get("Name", "Unknown FMI")
+        dm_dict["FMI Severity"] = fmi_entry.get("Severity", "")
 
         return dm_dict
 

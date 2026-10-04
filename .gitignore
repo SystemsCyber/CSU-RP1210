@@ -130,3 +130,14 @@ RP1210_selection.txt
 .vscode/settings.json
 RP1210_selection.txt
 RP1210_selection.txt
+
+# Licensed J1939 Digital Annex databases and proprietary data packs (never commit)
+J1939db.licensed.json
+*.licensed.json
+data-packs/private/
+
+# Rust build output
+/target/
+
+# Test fixtures are candump logs and must be committed
+!tests/fixtures/*.log

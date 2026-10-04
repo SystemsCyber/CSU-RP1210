@@ -110,24 +110,33 @@ class CSU_RP1210(QMainWindow):
         progress_label = QLabel("Loading the J1939 Database")
         #load the J1939 Database
         progress.setLabel(progress_label)
-        try:
-            with open("J1939db.json",'r') as j1939_file:
-                self.j1939db = json.load(j1939_file) 
-        except FileNotFoundError:
+        # The repository ships a skeleton J1939db.json without SAE content.
+        # A licensed database is found first via $CSU_J1939DB, then
+        # J1939db.licensed.json (git-ignored), then J1939db.json.
+        self.j1939db = {"J1939BitDecodings":{},
+                        "J1939FMITabledb": {},
+                        "J1939LampFlashTabledb": {},
+                        "J1939OBDTabledb": {},
+                        "J1939PGNdb": {},
+                        "J1939SAHWTabledb": {},
+                        "J1939SATabledb": {},
+                        "J1939SPNdb": {} }
+        db_candidates = [os.environ.get("CSU_J1939DB")]
+        for name in ("J1939db.licensed.json", "J1939db.json"):
+            db_candidates += [name, os.path.join(module_directory, name)]
+        for candidate in filter(None, db_candidates):
             try:
-                with open(os.path.join(module_directory,"J1939db.json"),'r') as j1939_file:
-                    self.j1939db = json.load(j1939_file) 
-            except FileNotFoundError: 
-                # Make a data structure to do something anyways
-                logger.debug("J1939db.json file was not found.")
-                self.j1939db = {"J1939BitDecodings":{},
-                                "J1939FMITabledb": {},
-                            "J1939LampFlashTabledb": {},
-                            "J1939OBDTabledb": {},
-                            "J1939PGNdb": {},
-                            "J1939SAHWTabledb": {},
-                            "J1939SATabledb": {},
-                            "J1939SPNdb": {} }
+                with open(candidate,'r') as j1939_file:
+                    self.j1939db.update(json.load(j1939_file))
+                logger.info("Loaded J1939 database from {}".format(candidate))
+                break
+            except FileNotFoundError:
+                continue
+        else:
+            logger.debug("No J1939 database file was found.")
+        if self.j1939db.get("_meta", {}).get("skeleton"):
+            logger.warning("Only the skeleton J1939db.json is loaded. Save a licensed database as "
+                           "J1939db.licensed.json to decode parameter names and values.")
         logger.info("Done Loading J1939db")
         progress.setValue(1)
         QCoreApplication.processEvents()

@@ -1,0 +1,90 @@
+{
+  "_meta": {
+    "skeleton": true,
+    "description": "Skeleton J1939 database for CSU-RP1210. It defines the schema and contains NO SAE J1939 Digital Annex content. The example entries use the manufacturer-proprietary ranges (PGN 65280 / 0xFF00, SPNs 520192+) and are illustrative only.",
+    "replace_with_licensed_copy": [
+      "Generate a database from your licensed J1939DA spreadsheet, e.g. with pretty_j1939's create_j1939db-json (https://github.com/nmfta-repo/pretty_j1939).",
+      "Save it as J1939db.licensed.json next to this file (git-ignored), or set the CSU_J1939DB environment variable, or pass --db to the csu tool.",
+      "Replacing this file directly also works, but then git will show it as modified. Do not commit licensed content."
+    ],
+    "search_order": ["--db PATH", "$CSU_J1939DB", "J1939db.licensed.json", "J1939db.json"],
+    "schemas": {
+      "current": "J1939PGNdb[pgn].SPNStartBits lists the start bit of each SPN in SPNs (same order), so one SPN can sit at different positions in different PGNs. Produced by pretty_j1939.",
+      "legacy": "J1939SPNdb[spn].StartBit holds one start bit per SPN. Used by the original CSU-RP1210 database. Resolution -2 means ASCII and -3 means binary (raw integer)."
+    },
+    "bit_numbering": "Start bits are 0-based with bit 0 = least significant bit of data byte 1 (J1939 byte 1 bit 1).",
+    "data_packs": "Additional files with the same layout (e.g. OEM proprietary definitions) can be layered on top with csu --pack FILE; later files override earlier ones."
+  },
+  "J1939PGNdb": {
+    "65280": {
+      "Label": "EXAMPLE",
+      "Name": "Example Proprietary B message (illustrative, not from J1939DA)",
+      "PGNLength": "8",
+      "Rate": "100 ms",
+      "SPNs": [520192, 520193, 520194],
+      "SPNStartBits": [0, 16, 24]
+    }
+  },
+  "J1939SPNdb": {
+    "520192": {
+      "Acronym": "EXAMPLE",
+      "Name": "Example shaft speed",
+      "DataRange": "0 to 8031.875 rpm",
+      "OperationalRange": "",
+      "OperationalLow": 0.0,
+      "OperationalHigh": 8031.875,
+      "Offset": 0.0,
+      "Resolution": 0.125,
+      "SPNLength": 16,
+      "StartBit": 0,
+      "EndBit": 15,
+      "PGNLength": "8",
+      "TransmissionRate": "100 ms",
+      "Units": "rpm",
+      "SPN": 520192
+    },
+    "520193": {
+      "Acronym": "EXAMPLE",
+      "Name": "Example two-state switch",
+      "DataRange": "0 to 3",
+      "OperationalRange": "",
+      "OperationalLow": 0.0,
+      "OperationalHigh": 3.0,
+      "Offset": 0.0,
+      "Resolution": 1,
+      "SPNLength": 2,
+      "StartBit": 16,
+      "EndBit": 17,
+      "PGNLength": "8",
+      "TransmissionRate": "100 ms",
+      "Units": "bit",
+      "SPN": 520193
+    },
+    "520194": {
+      "Acronym": "EXAMPLE",
+      "Name": "Example temperature",
+      "DataRange": "-40 to 210 deg C",
+      "OperationalRange": "",
+      "OperationalLow": -40.0,
+      "OperationalHigh": 210.0,
+      "Offset": -40.0,
+      "Resolution": 1,
+      "SPNLength": 8,
+      "StartBit": 24,
+      "EndBit": 31,
+      "PGNLength": "8",
+      "TransmissionRate": "100 ms",
+      "Units": "deg C",
+      "SPN": 520194
+    }
+  },
+  "J1939BitDecodings": {
+    "520193": {"0": "off", "1": "on", "2": "error", "3": "not available"}
+  },
+  "J1939SATabledb": {},
+  "J1939SAHWTabledb": {},
+  "J1939FMITabledb": {},
+  "J1939LampFlashTabledb": {},
+  "J1939OBDTabledb": {},
+  "J1939Manufacturerdb": {}
+}
