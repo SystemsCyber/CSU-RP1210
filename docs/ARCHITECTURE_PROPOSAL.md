@@ -8,7 +8,7 @@ Status: **Approved direction, Phase 1 started** · 2026-10-04
 |---|---|---|
 | 1 | Core language | **Rust core** approved. Workspace in `crates/`: `csu-bus`, `csu-j1939`, `csu-sec`, `csu` (CLI + web UI server). |
 | 2 | GUI | **Open.** Recommendation: web UI in a Tauri desktop shell (see §3.3). A working web tree view (`csu serve`) is available to judge speed. |
-| 3 | `J1939db.json` | Now a **skeleton** with the schema and illustrative proprietary-range examples only. The licensed database goes in `J1939db.licensed.json` (git-ignored), `$CSU_J1939DB`, or `--db`. Both the Python app and the Rust core follow that search order. |
+| 3 | `J1939db.json` | Now a **skeleton** with the schema only. `DigitalAnnexSelect.py` (also File > J1939 Database) builds `J1939db.licensed.json` (metric) and `J1939db.us.licensed.json` (US customary) from the licensed Digital Annex via pretty_j1939. It validates and compares database versions and runs editable decode test vectors. The unit preference lives in `csu_settings.json`, shared by the Python app and the Rust core (`--units`). |
 | 4 | J1939-91C details | **Stubbed** (`TODO(J1939-91C)`). Only content from the public Golden Tester paper is implemented, and its four vectors pass. |
 | 5 | Architecture model | SysML v2 textual model in [`model/sysml/`](../model/sysml/README.md). |
 

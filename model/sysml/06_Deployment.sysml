@@ -102,6 +102,8 @@ package CSU_Deployment {
         satisfy reqDm by system.j1939.dm;
         satisfy reqUds by system.uds;
         satisfy reqDb by system.j1939.decoder;
+        satisfy reqUnits by system.j1939.decoder;
+        satisfy reqDbValidation by system.j1939.decoder;
         satisfy reqTree by system.web;
         satisfy reqPassive by system.policy;
         satisfy reqVectors by system.security.tagVerifier;

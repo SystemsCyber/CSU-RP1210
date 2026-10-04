@@ -73,6 +73,20 @@ package CSU_Requirements {
         subject decoder : DigitalAnnexDecoder;
     }
 
+    requirement def <'REQ-DB-2'> DualUnitDatabases {
+        doc /* The system shall build metric (SI) and US customary databases from the licensed
+             * Digital Annex, using an editable conversion table, and shall load the one matching
+             * the user's unit preference in both the Python application and the Rust core. */
+        subject decoder : DigitalAnnexDecoder;
+    }
+
+    requirement def <'REQ-DB-3'> DatabaseValidation {
+        doc /* The system shall validate any database version (structure, references, positions,
+             * numeric fields, unit consistency), compare versions and unit systems, and run
+             * user-editable decode test vectors. */
+        subject decoder : DigitalAnnexDecoder;
+    }
+
     requirement def <'REQ-UI-1'> TreeView {
         doc /* The UI shall present a channel > source address > PGN tree with message counts
              * and periods, per-byte value / standard deviation / change counts, and decoded SPNs
@@ -131,6 +145,8 @@ package CSU_Requirements {
     requirement reqDm : DmDecoding;
     requirement reqUds : UdsDiagnostics;
     requirement reqDb : SkeletonDatabase;
+    requirement reqUnits : DualUnitDatabases;
+    requirement reqDbValidation : DatabaseValidation;
     requirement reqTree : TreeView;
     requirement reqPassive : PassiveByDefault;
     requirement reqVectors : J1939_91C_Vectors;

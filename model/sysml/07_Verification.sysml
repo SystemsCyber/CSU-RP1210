@@ -59,7 +59,19 @@ package CSU_Verification {
         objective { verify reqTree; }
     }
 
+    verification def DatabaseToolTests {
+        doc /* tests/test_j1939db_tools.py, tests/test_digital_annex_gui.py and
+             * tests/test_licensed_db.py (pytest): generation from a synthetic Digital Annex,
+             * metric/US conversion and cross-check, SLOT cross-check against the Digital Annex,
+             * validation, version comparison, realistic test vectors, licensed-content guards,
+             * the dialog driven offscreen, and Rust/Python decode agreement in both unit systems. */
+        subject system : CsuSystem;
+        attribute method : Method = Method::Test;
+        objective { verify reqDb; verify reqUnits; verify reqDbValidation; }
+    }
+
     verification goldenVectors : GoldenVectorTest;
+    verification databaseTools : DatabaseToolTests;
     verification transportProtocol : TransportProtocolTest;
     verification pipeline : PipelineTest;
     verification throughput : ThroughputBenchmark;

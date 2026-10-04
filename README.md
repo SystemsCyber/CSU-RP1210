@@ -16,9 +16,28 @@ target/release/csu serve rp1210:PEAKRP32,device=1,bitrate=250000
 
 Build a 32-bit binary (`cargo build --release --target i686-pc-windows-msvc`) for vendors whose RP1210 DLLs are 32-bit only.
 
-### J1939 database
+### J1939 database (metric and US customary)
 
-`J1939db.json` in this repository is a **skeleton**: it has the schema and no SAE J1939 Digital Annex content. To decode parameter names and values, generate a database from your licensed J1939DA (for example with [pretty_j1939](https://github.com/nmfta-repo/pretty_j1939)) and save it as `J1939db.licensed.json` (git-ignored). You can also point `CSU_J1939DB` at it, or pass `--db`. Both the Python application and the Rust core look for it in that order.
+`J1939db.json` in this repository is a **skeleton**: it has the schema and no SAE J1939 Digital Annex content. Create the real databases from your licensed Digital Annex with the **J1939 Digital Annex** dialog: run `python DigitalAnnexSelect.py`, or use File > J1939 Database in CSU-RP1210.
+
+- **Create:** select the Digital Annex workbook(s) (`.xlsx` or `.xls`) and write either or both databases. You also choose which units CSU-RP1210 uses; that choice is saved in `csu_settings.json`.
+  - `J1939db.licensed.json`: metric (SI), as published in the Digital Annex
+  - `J1939db.us.licensed.json`: US customary (deg F, psi, mph, miles, gallons, lb, hp, ...), converted with the editable table in `j1939_units.json`
+- **Validate:** check any database version: structure, SPN references, start bits, field bounds, overlaps, numeric fields, Python-app compatibility, and unit consistency. Optionally compare it with another version (added/removed/changed PGNs and SPNs), or with the other unit system (every conversion is cross-checked).
+- **Validate, SLOT cross-check:** given the Digital Annex workbook, every numeric SPN in the metric file is checked against its SLOT definition (scale factor, offset, unit, length limits). The US file is checked against the SLOT values converted with `j1939_units.json`. The check also lists which SLOT units are converted and which are kept as published. Generation takes scaling from the Digital Annex's numeric "value only" columns, which corrects SPNs whose unit text contains digits (such as m/s² or km²/h²); pretty_j1939's text parser misreads those.
+- **Test vectors:** edit decode test cases (PGN, payload, SPN, expected metric and US values, or expected status/text) and run them against a database. They are stored in `tests/j1939db_vectors.json` and regenerated with `python tests/build_vectors.py`. That script encodes a realistic highway-cruise operating point and real key-on frames (`tests/fixtures/mcx30_keyon_excerpt.log`) using your local licensed databases.
+
+**Licensing guard:** the vectors hold payloads and expected results only. They cover at most 40 widely published SPNs, with at most 3 vectors each, and contain no scaling, bit positions or Digital Annex text. `tests/test_no_licensed_content.py` enforces this on every test run, and fails if a workbook or licensed database is staged. With the workbook present, `tests/test_licensed_db.py` also scans all tracked files for Digital Annex description text.
+
+Both generated files are git-ignored. Never commit them. The Python application and the Rust core (`csu --units metric|us`, or `$CSU_UNITS`) load the file for the preferred units, falling back to the other one, then to the skeleton. `CSU_J1939DB` or `--db` overrides the search.
+
+Command-line equivalents and the test suite:
+
+```
+python j1939db_tools.py generate path/to/J1939DA.xlsx --out .
+python j1939db_tools.py validate J1939db.us.licensed.json --baseline J1939db.licensed.json --da J1939DA*.xlsx
+python -m pytest            # includes checks of your licensed databases when present
+```
 
 ## Setup
 Install a 32-bit version of Python onto a Windows computer.
