@@ -1,0 +1,16 @@
+[package]
+name = "csu-sec"
+description = "SAE J1939-91C secure messaging support (CMAC verification, freshness tracking; standard-dependent parts stubbed)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+aes = "0.8"
+cmac = "0.7"
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

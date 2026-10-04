@@ -1,0 +1,24 @@
+[workspace]
+resolver = "3"
+members = ["crates/csu-bus", "crates/csu-j1939", "crates/csu-sec", "crates/csu"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+authors = ["Jeremy Daily <jeremy.daily@colostate.edu>"]
+repository = "https://github.com/dr-daily/CSU-RP1210"
+
+[workspace.dependencies]
+csu-bus = { path = "crates/csu-bus" }
+csu-j1939 = { path = "crates/csu-j1939" }
+csu-sec = { path = "crates/csu-sec" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+libloading = "0.8"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

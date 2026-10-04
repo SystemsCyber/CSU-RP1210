@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSU Network Tree</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --line: #d9dde3; --text: #1b1f24; --muted: #5f6873;
+    --accent: #1e6fd9; --sel: #dbe8fb; --warn: #b54708; --bad: #c4320a; --good: #087443;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1216; --panel: #161a20; --line: #2a3038; --text: #e6e9ed; --muted: #97a1ad;
+      --accent: #5aa2ff; --sel: #1d3350; --warn: #f5a524; --bad: #ff6b5a; --good: #3ccf8e;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1216; --panel: #161a20; --line: #2a3038; --text: #e6e9ed; --muted: #97a1ad;
+    --accent: #5aa2ff; --sel: #1d3350; --warn: #f5a524; --bad: #ff6b5a; --good: #3ccf8e;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, "Segoe UI", sans-serif;
+         display: grid; grid-template-rows: auto 1fr; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 8px 16px;
+           border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .stat { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .stat b { color: var(--text); font-weight: 600; }
+  .badge { font-size: 12px; padding: 1px 7px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); }
+  .badge.live { color: var(--good); border-color: var(--good); }
+  .badge.warn { color: var(--warn); border-color: var(--warn); }
+  .badge.bad { color: var(--bad); border-color: var(--bad); }
+  input[type=search] { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+                       padding: 4px 8px; min-width: 200px; margin-left: auto; }
+  main { display: grid; grid-template-columns: minmax(320px, 2fr) minmax(320px, 3fr); min-height: 0; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; grid-auto-rows: minmax(300px, auto); } }
+  section { min-height: 0; overflow: auto; border-right: 1px solid var(--line); }
+  section:last-child { border-right: 0; padding: 12px 16px; }
+
+  /* Tree */
+  .tree { list-style: none; margin: 0; padding: 4px 0; font-variant-numeric: tabular-nums; }
+  .tree ul { list-style: none; margin: 0; padding: 0; }
+  .row { display: grid; grid-template-columns: 18px 1fr auto auto; gap: 8px; align-items: center;
+         padding: 3px 10px; cursor: pointer; white-space: nowrap; border-left: 3px solid transparent; }
+  .row:hover { background: color-mix(in srgb, var(--sel) 50%, transparent); }
+  .row.selected { background: var(--sel); border-left-color: var(--accent); }
+  .row .tw { color: var(--muted); font-size: 11px; text-align: center; }
+  .row .label { overflow: hidden; text-overflow: ellipsis; }
+  .row .num { color: var(--muted); font-family: var(--mono); font-size: 12px; text-align: right; }
+  .lvl1 { padding-left: 10px; font-weight: 600; }
+  .lvl2 { padding-left: 26px; }
+  .lvl3 { padding-left: 46px; font-size: 13px; }
+  .mono { font-family: var(--mono); }
+  .dim { color: var(--muted); }
+  .mil { color: var(--bad); font-weight: 600; }
+  .collapsed > ul { display: none; }
+
+  /* Detail */
+  h2 { font-size: 15px; margin: 4px 0 2px; }
+  .sub { color: var(--muted); margin-bottom: 12px; }
+  .bytes { display: grid; grid-template-columns: repeat(8, minmax(52px, 1fr)); gap: 4px; margin-bottom: 16px; }
+  .cell { border-radius: 4px; padding: 4px; text-align: center; font-family: var(--mono); font-size: 12px; color: #fff; }
+  .cell .v { font-size: 15px; font-weight: 600; }
+  .cell .s { opacity: 0.9; }
+  .legend { color: var(--muted); font-size: 12px; margin: -8px 0 16px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.r, th.r { text-align: right; }
+  .st-NotAvailable, .st-Missing { color: var(--muted); }
+  .st-Error, .st-OutOfRange { color: var(--bad); }
+  .st-Reserved { color: var(--warn); }
+  .empty { color: var(--muted); padding: 24px 0; }
+  kbd { font-family: var(--mono); font-size: 12px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CSU Network Tree</h1>
+  <span id="status" class="badge">connecting…</span>
+  <span class="stat">Source <b id="source">—</b></span>
+  <span class="stat">Frames <b id="total">0</b></span>
+  <span class="stat">Rate <b id="rate">0</b>/s</span>
+  <span id="dbbadge" class="badge" hidden></span>
+  <input id="filter" type="search" placeholder="Filter SA, PGN, label…  ( / )" aria-label="Filter">
+</header>
+<main>
+  <section aria-label="Network tree"><ul id="tree" class="tree" role="tree"></ul></section>
+  <section id="detail" aria-live="polite"><div class="empty">Select a parameter group in the tree.</div></section>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const hex2 = (n) => n.toString(16).toUpperCase().padStart(2, "0");
+const fmtPgn = (p) => `${p} (0x${p.toString(16).toUpperCase().padStart(4, "0")})`;
+const nf = new Intl.NumberFormat();
+
+let ws, selection = null, last = null, prevTotal = 0, prevT = performance.now();
+const collapsed = new Set();          // keys of collapsed channel/SA nodes
+const rows = new Map();               // key -> <li> element (keyed reconciliation)
+
+function keyOf(sel) {
+  return sel.standard ? `std:${sel.ch}:${sel.pgn}` : `pg:${sel.ch}:${sel.sa}:${sel.pgn}:${sel.da}:${sel.reassembled ? 1 : 0}`;
+}
+
+function connect() {
+  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+  ws.onopen = () => { if (selection) ws.send(JSON.stringify(selection)); };
+  ws.onmessage = (ev) => { last = JSON.parse(ev.data); render(last); };
+  ws.onclose = () => { setStatus("disconnected", "bad"); setTimeout(connect, 1500); };
+}
+
+function setStatus(text, cls) { const s = $("status"); s.textContent = text; s.className = "badge " + (cls || ""); }
+
+// Value color ramp from the BallastController HMI: dark red → dark green → dark blue.
+function ramp(value, min, max) {
+  const mid = (min + max) / 2;
+  const [a, b, r] = value <= mid
+    ? [[139, 0, 0], [0, 100, 0], (value - min) / (mid - min || 1)]
+    : [[0, 100, 0], [0, 0, 139], (value - mid) / (max - mid || 1)];
+  const t = Math.max(0, Math.min(1, r));
+  return `rgb(${a.map((x, i) => Math.round(x + t * (b[i] - x))).join(",")})`;
+}
+
+function ensureRow(key, parentUl, cls, onClick, index) {
+  let li = rows.get(key);
+  if (!li) {
+    li = document.createElement("li");
+    li.setAttribute("role", "treeitem");
+    li.innerHTML = `<div class="row ${cls}"><span class="tw"></span><span class="label"></span><span class="num a"></span><span class="num b"></span></div>`;
+    li.firstChild.addEventListener("click", onClick);
+    rows.set(key, li);
+  }
+  const at = parentUl.children[index];
+  if (at !== li) parentUl.insertBefore(li, at || null);
+  li.dataset.seen = "1";
+  return li;
+}
+
+function setRow(li, tw, label, a, b, title) {
+  const r = li.firstChild;
+  if (r.children[0].textContent !== tw) r.children[0].textContent = tw;
+  if (r.children[1].innerHTML !== label) r.children[1].innerHTML = label;
+  if (r.children[2].textContent !== a) r.children[2].textContent = a;
+  if (r.children[3].textContent !== b) r.children[3].textContent = b;
+  if (title !== undefined) r.title = title;
+}
+
+function childUl(li) {
+  let ul = li.querySelector(":scope > ul");
+  if (!ul) { ul = document.createElement("ul"); ul.setAttribute("role", "group"); li.appendChild(ul); }
+  return ul;
+}
+
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function matches(filter, ...fields) { return !filter || fields.some((f) => String(f ?? "").toLowerCase().includes(filter)); }
+
+function select(sel) {
+  selection = sel;
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(sel));
+  for (const [k, li] of rows) li.firstChild.classList.toggle("selected", k === keyOf(sel));
+}
+
+function toggle(key, li) {
+  if (collapsed.has(key)) collapsed.delete(key); else collapsed.add(key);
+  li.classList.toggle("collapsed", collapsed.has(key));
+}
+
+function render(msg) {
+  const snap = msg.snapshot;
+  setStatus(msg.error ? "error" : msg.live ? "live" : "ended", msg.error ? "bad" : msg.live ? "live" : "");
+  if (msg.error) $("status").title = msg.error;
+  $("source").textContent = msg.source;
+  $("total").textContent = nf.format(snap.total);
+  const now = performance.now();
+  const rate = Math.max(0, (snap.total - prevTotal) / ((now - prevT) / 1000));
+  if (now - prevT > 900) { $("rate").textContent = nf.format(Math.round(rate)); prevTotal = snap.total; prevT = now; }
+  const db = $("dbbadge");
+  db.hidden = !snap.db_skeleton_only;
+  db.className = "badge warn";
+  db.textContent = "Skeleton J1939 DB: names and SPNs unavailable";
+  db.title = "Place a licensed database at J1939db.licensed.json or start csu with --db";
+
+  const filter = $("filter").value.trim().toLowerCase();
+  const tree = $("tree");
+  for (const li of rows.values()) li.dataset.seen = "";
+
+  snap.channels.forEach((ch, ci) => {
+    const chKey = `ch:${ch.ch}`;
+    const chLi = ensureRow(chKey, tree, "lvl1", () => toggle(chKey, chLi), ci);
+    chLi.classList.toggle("collapsed", collapsed.has(chKey));
+    setRow(chLi, collapsed.has(chKey) ? "▸" : "▾", esc(ch.name), `${ch.sources.length} SAs`, nf.format(ch.count),
+           ch.tp_aborts ? `${ch.tp_aborts} TP sessions aborted` : "");
+    const chUl = childUl(chLi);
+
+    ch.sources.forEach((s, si) => {
+      const sKey = `sa:${ch.ch}:${s.sa}`;
+      const pgnHits = s.pgns.filter((p) => matches(filter, p.pgn, p.label, p.name, p.pgn.toString(16)));
+      const show = matches(filter, s.sa, s.name, s.vin, s.component_id) || pgnHits.length;
+      const sLi = ensureRow(sKey, chUl, "lvl2", () => {}, si);
+      sLi.hidden = !show;
+      const isCollapsed = filter ? false : !collapsed.has("open:" + sKey);
+      sLi.classList.toggle("collapsed", isCollapsed);
+      sLi.firstChild.onclick = () => {
+        if (collapsed.has("open:" + sKey)) collapsed.delete("open:" + sKey); else collapsed.add("open:" + sKey);
+        render(last);
+      };
+      const mfr = s.claimed_name?.manufacturer ? ` · ${esc(s.claimed_name.manufacturer)}` : "";
+      const mil = s.mil ? ` <span class="mil" title="MIL on">MIL</span>` : "";
+      const dtc = s.dtc_count ? ` <span class="mil">${s.dtc_count} DTC</span>` : "";
+      const tip = [s.vin && `VIN ${s.vin}`, s.component_id && `Component ${s.component_id}`, s.software_id && `Software ${s.software_id}`,
+                   s.claimed_name && `NAME ${s.claimed_name.raw}`].filter(Boolean).join("\n");
+      setRow(sLi, isCollapsed ? "▸" : "▾", `<span class="mono">${s.sa}</span> ${esc(s.name)}<span class="dim">${mfr}</span>${mil}${dtc}`,
+             `${s.pgns.length} PGs`, nf.format(s.count), tip);
+      const sUl = childUl(sLi);
+
+      s.pgns.forEach((p, pi) => {
+        const sel = { ch: ch.ch, sa: s.sa, pgn: p.pgn, da: p.da, reassembled: p.reassembled, standard: false };
+        const k = keyOf(sel);
+        const li = ensureRow(k, sUl, "lvl3", () => select(sel), pi);
+        li.hidden = filter && !pgnHits.includes(p) && !matches(filter, s.sa, s.name);
+        const dest = p.da !== 255 ? ` <span class="dim">→ ${p.da}</span>` : "";
+        const tp = p.reassembled ? ` <span class="badge">TP</span>` : "";
+        const lbl = p.label ? ` ${esc(p.label)}` : "";
+        setRow(li, "", `<span class="mono">${p.pgn}</span>${dest}${lbl}${tp}`,
+               p.period_ms != null ? `${p.period_ms.toFixed(0)} ms` : "", nf.format(p.count), p.name);
+        li.firstChild.classList.toggle("selected", selection && k === keyOf(selection));
+      });
+    });
+
+    if (ch.standard.length) {
+      const stdKey = `stdgrp:${ch.ch}`;
+      const gLi = ensureRow(stdKey, chUl, "lvl2", () => toggle(stdKey, gLi), ch.sources.length);
+      gLi.classList.toggle("collapsed", collapsed.has(stdKey));
+      setRow(gLi, collapsed.has(stdKey) ? "▸" : "▾", "11-bit identifiers", `${ch.standard.length} IDs`,
+             nf.format(ch.standard.reduce((a, n) => a + n.count, 0)));
+      const gUl = childUl(gLi);
+      ch.standard.forEach((n, ni) => {
+        const sel = { ch: ch.ch, sa: 0, pgn: n.can_id, da: 255, reassembled: false, standard: true };
+        const k = keyOf(sel);
+        const li = ensureRow(k, gUl, "lvl3", () => select(sel), ni);
+        li.hidden = filter && !matches(filter, n.can_id.toString(16));
+        setRow(li, "", `<span class="mono">0x${n.can_id.toString(16).toUpperCase().padStart(3, "0")}</span>`,
+               n.period_ms != null ? `${n.period_ms.toFixed(0)} ms` : "", nf.format(n.count));
+      });
+    }
+  });
+  for (const [k, li] of rows) if (!li.dataset.seen) { li.remove(); rows.delete(k); }
+  renderDetail(snap.detail);
+}
+
+function renderDetail(d) {
+  const el = $("detail");
+  if (!d) { if (!selection) return; el.innerHTML = `<div class="empty">Waiting for data…</div>`; return; }
+  const n = d.node, sel = d.selection;
+  const bytes = [];
+  for (let i = 0; i < n.data.length / 2; i++) bytes.push(parseInt(n.data.substr(i * 2, 2), 16));
+  const shown = bytes.slice(0, 64);
+  const title = sel.standard
+    ? `CAN ID 0x${n.can_id.toString(16).toUpperCase()}`
+    : `PGN ${fmtPgn(n.pgn)}${n.label ? " · " + esc(n.label) : ""}`;
+  const meta = [
+    !sel.standard && `SA ${sel.sa}`,
+    n.da !== 255 && !sel.standard && `DA ${n.da}`,
+    n.can_id != null && `ID ${n.can_id.toString(16).toUpperCase().padStart(8, "0")}`,
+    `${nf.format(n.count)} msgs`,
+    n.period_ms != null && `${n.period_ms} ms`,
+    `${bytes.length} bytes`,
+    n.reassembled && "reassembled (TP)",
+  ].filter(Boolean).join(" · ");
+  let html = `<h2>${title}</h2><div class="sub">${esc(n.name)}${n.name ? " · " : ""}${meta}</div><div class="bytes">`;
+  shown.forEach((b, i) => {
+    const sd = n.std[i] ?? 0, ch = n.changes[i] ?? 0;
+    html += `<div class="cell" style="background:${ramp(b, 0, 255)}" title="byte ${i + 1}: mean ${n.mean[i] ?? "-"}, std ${sd}, changed ${ch}×">
+      <div class="dim" style="color:#fffc">B${i}</div><div class="v">${hex2(b)}</div>
+      <div class="s" style="background:${ramp(Math.min(sd, 100), 0, 100)};border-radius:3px">σ ${sd.toFixed(1)}</div></div>`;
+  });
+  html += `</div><div class="legend">Cell color = byte value (red 0x00 → green 0x80 → blue 0xFF). σ = running standard deviation; bytes that vary are candidate signals.</div>`;
+  if (d.dtcs) {
+    html += `<h2>Diagnostic trouble codes</h2>`;
+    html += d.dtcs.length
+      ? `<table><tr><th class="r">SPN</th><th class="r">FMI</th><th class="r">OC</th><th>Description</th></tr>${d.dtcs.map((t) =>
+          `<tr><td class="r mono">${t.spn}</td><td class="r mono">${t.fmi}</td><td class="r">${t.occurrences}</td><td>${esc(t.spn_name)}${t.fmi_text ? " — " + esc(t.fmi_text) : ""}</td></tr>`).join("")}</table>`
+      : `<div class="empty">No active DTCs.</div>`;
+  }
+  if (!sel.standard) {
+    html += `<h2>Decoded parameters</h2>`;
+    if (!d.spns.length) {
+      html += `<div class="empty">${last?.snapshot.db_skeleton_only ? "No definitions in the skeleton database. Load a licensed J1939 DA database to decode SPNs." : "No SPN definitions for this PGN."}</div>`;
+    } else {
+      html += `<table><tr><th class="r">SPN</th><th>Name</th><th class="r">Value</th><th>Units</th><th>Status</th></tr>`;
+      for (const s of d.spns) {
+        const v = s.text ?? (s.value != null ? +s.value.toFixed(4) : "—");
+        html += `<tr><td class="r mono">${s.spn}</td><td>${esc(s.name)}</td><td class="r mono">${esc(v)}</td><td>${esc(s.units)}</td><td class="st-${s.status}">${s.status}</td></tr>`;
+      }
+      html += `</table>`;
+    }
+  }
+  el.innerHTML = html;
+}
+
+$("filter").addEventListener("input", () => last && render(last));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "/" && document.activeElement !== $("filter")) { e.preventDefault(); $("filter").focus(); }
+  if (e.key === "Escape") { $("filter").value = ""; last && render(last); }
+});
+connect();
+</script>
+</body>
+</html>
