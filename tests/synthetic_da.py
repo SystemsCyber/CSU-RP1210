@@ -18,8 +18,9 @@ SPS_HEADER = [
     "SP Position in PG", "SPN", "SP Label", "SP Length", "Scaling", "Offset",
     "Data Range", "Operational Range", "Unit", "SP Description",
     "SLOT Identifier", "SLOT Name", "Scale Factor\n(value only)", "Offset\n(value only)",
-    "Length Minimum\n(bits)", "Length Maximum\n(bits)",
+    "Length Minimum\n(bits)", "Length Maximum\n(bits)", "Default Priority",
 ]
+PRIORITIES = {65280: 3}   # others 6
 
 # SLOT identifier -> (name, type, unit, transfer function, scale, offset, length min, length max)
 SLOTS = {
@@ -73,7 +74,7 @@ def build(path):
     ws.append(SPS_HEADER)
     for row in SPS_ROWS:
         slot = SLOTS[row[-1]]
-        ws.append(list(row[:-1]) + [row[-1], slot[0], slot[4], slot[5], slot[6], slot[7]])
+        ws.append(list(row[:-1]) + [row[-1], slot[0], slot[4], slot[5], slot[6], slot[7], PRIORITIES.get(row[0], 6)])
 
     slots = wb.create_sheet("SLOTs")
     slots.append(["SLOTs"])

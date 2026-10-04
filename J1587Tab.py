@@ -40,6 +40,7 @@ import math
 import traceback
 from RP1210Functions import *
 from TableModel.TableModel import *
+import j1587db_tools
 
 import logging
 logger = logging.getLogger(__name__)
@@ -431,10 +432,13 @@ class J1587Tab(QWidget):
             if pid == 168: #Battery Potential
                 try:
                     self.battery_potential[source_key].append((time.time(), float(self.J1587_unique_ids[pid_key]["Value"])))
-                    self.root.voltage_graph.add_data(self.battery_potential[source_key], 
-                        marker = 'x-', 
-                        label = self.J1587_unique_ids[pid_key]["Message Identification"]+": PID {}".format(pid))
-                    self.root.voltage_graph.plot()
+                    # The voltage graph is optional (not every build of the main window has one).
+                    voltage_graph = getattr(self.root, "voltage_graph", None)
+                    if voltage_graph is not None:
+                        voltage_graph.add_data(self.battery_potential[source_key],
+                            marker = 'x-',
+                            label = self.J1587_unique_ids[pid_key]["Message Identification"]+": PID {}".format(pid))
+                        voltage_graph.plot()
                 except ValueError:
                     logger.debug("No Definition for Battery Potential in J1587db")
             elif pid == 245: #Total Vehicle Distance
@@ -481,39 +485,19 @@ class J1587Tab(QWidget):
     def get_j1587_value(self, mid, pid, data, source_key):
         pid_key = repr((mid,pid))
         
-        try:
-            units = self.J1587db["PID"]["{}".format(pid)]["Unit"]
-
-        except KeyError:
-            value = repr(data)
-            units = ""
-            return ("{}".format(value), units)
+        entry = self.J1587db.get("PID", {}).get("{}".format(pid))
+        if entry is None:
+            return (repr(data), "")
         else:
-            data_length = self.J1587db["PID"]["{}".format(pid)]["DataLength"]
-            data_type = self.J1587db["PID"]["{}".format(pid)]["DataType"]
-            bit_resolution = self.J1587db["PID"]["{}".format(pid)]["BitResolution"]
-            
+            units = entry.get("Unit", "")
+            data_type = entry.get("DataType")
             if data_type == "Binary Bit-Mapped" and pid != 194:
                 #logger.debug("Decoding J1587 Bits. Data = " + repr(data))
                 if len(data) == 1:
                     value = struct.unpack("B",data)[0]
                     self.J1587_unique_ids[pid_key]["Meaning"] = self.get_j1587_bit_meaning(pid,value)
                 else:
-                    value = data
-            elif data_type == "Unsigned Short Integer" and data_length == 1 and len(data) == 1:
-                value = "{:0.3f}".format(struct.unpack("B",data)[0] * bit_resolution)
-            elif data_type == "Unsigned Integer" and data_length == 2 and len(data) == 2:
-                value = "{:0.3f}".format(struct.unpack("<H",data)[0] * bit_resolution)
-            elif data_type == "Signed Integer" and data_length == 2 and len(data) == 2:
-                value = "{:0.3f}".format(struct.unpack("<h",data)[0] * bit_resolution)
-            elif data_type == "Signed Integer" and data_length == 2 and len(data) == 3:
-                value = "{:0.3f}".format(struct.unpack("<h",data[1:3])[0] * bit_resolution)
-            elif data_type == "Unsigned Long Integer" and data_length == 4 and len(data) == 4:
-                value = "{:0.3f}".format(struct.unpack("<L",data)[0] * bit_resolution)
-            elif data_type == "Unsigned Long Integer" and data_length == 4 and len(data) == 5:
-                value = "{:0.3f}".format(struct.unpack("<L",data[1:5])[0] * bit_resolution)
-            elif data_type == "Signed Long Integer" and data_length == 4 and len(data) == 5:
-                value = "{:0.3f}".format(struct.unpack("<l",data[1:5])[0] * bit_resolution)
+                    value = data.hex(" ").upper()
             elif pid == 251 and data[0] == 3: #Clock
                 seconds = data[1]
                 minutes = data[2]
@@ -592,7 +576,8 @@ class J1587Tab(QWidget):
                 value = "{:d}".format(self.pid194_count)
                 units = "Count"
             else:
-                value = ""
+                # Numeric parameters: resolution, offset and signedness from the database.
+                value = j1587db_tools.format_value(j1587db_tools.decode_pid(self.J1587db, pid, data))
         
         return ("{}".format(value),units)  
 
@@ -653,7 +638,7 @@ class J1587Tab(QWidget):
             message += ": "
 
             fmi = diag_code_char & 0x0F
-            fmi_text = self.J1587db["FMI"]["{}".format(fmi)]
+            fmi_text = self.J1587db.get("FMI", {}).get("{}".format(fmi), "FMI {}".format(fmi))
             message += fmi_text
 
             if occurance_count_included:

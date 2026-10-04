@@ -66,3 +66,42 @@ def test_vectors_stay_within_licensing_limits():
     assert len(per_spn) <= MAX_PUBLIC_SPNS, f"{len(per_spn)} public SPNs (limit {MAX_PUBLIC_SPNS})"
     over = {s: n for s, n in per_spn.items() if n > MAX_VECTORS_PER_SPN}
     assert not over, f"too many vectors per SPN: {over}"
+
+
+# ---- SAE J1587 / J1708 (same rules) ----------------------------------------
+
+ALLOWED_J1587_VECTOR_KEYS = {"name", "mid", "pid", "data", "expected", "expected_text", "tolerance", "source"}
+
+
+def test_no_sae_documents_or_exports_tracked():
+    bad = [f for f in tracked_files()
+           if f.lower().endswith((".pdf", ".licensed.dbc"))
+           or os.path.basename(f).upper().startswith(("J1587", "J1708")) and f.lower().endswith(".pdf")]
+    assert not bad, f"SAE documents or licensed exports are tracked or staged: {bad}"
+
+
+def test_tracked_j1587_databases_are_skeletons():
+    for f in tracked_files():
+        if not f.lower().endswith(".json") or not os.path.exists(os.path.join(ROOT, f)):
+            continue
+        try:
+            with open(os.path.join(ROOT, f), encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (ValueError, UnicodeDecodeError):
+            continue
+        if isinstance(data, dict) and {"PID", "SID", "FMI"} <= set(data):
+            assert data.get("_meta", {}).get("skeleton") is True, f"{f} is not marked as a skeleton"
+            assert not data["PID"] and not data["FMI"] and len(data["MID"]) == 0, f"{f} holds J1587 definitions"
+
+
+def test_j1587_vectors_stay_within_licensing_limits():
+    import j1587db_tools
+    per_pid = {}
+    for v in j1587db_tools.load_vectors():
+        extra = set(v) - ALLOWED_J1587_VECTOR_KEYS
+        assert not extra, f"vector {v.get('name')!r} carries non-vector fields {extra}"
+        assert len(v["name"]) <= 80
+        per_pid[v["pid"]] = per_pid.get(v["pid"], 0) + 1
+    assert len(per_pid) <= MAX_PUBLIC_SPNS, f"{len(per_pid)} PIDs (limit {MAX_PUBLIC_SPNS})"
+    over = {p: n for p, n in per_pid.items() if n > MAX_VECTORS_PER_SPN}
+    assert not over, f"too many vectors per PID: {over}"

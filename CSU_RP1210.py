@@ -78,7 +78,11 @@ from J1939Tab import *
 from J1587Tab import *
 from ComponentInfoTab import *
 from DigitalAnnexSelect import DigitalAnnexDialog
+from J1587DatabaseSelect import J1587DatabaseDialog
 import j1939db_tools
+import j1587db_tools
+import j1939_dbc
+import vehicle_spy
 from ISO15765 import *
 
 import logging
@@ -123,7 +127,7 @@ class CSU_RP1210(QMainWindow):
         #load the J1939 Database
         progress.setLabel(progress_label)
         # The repository ships a skeleton J1939db.json without SAE content.
-        # Licensed databases come from File > J1939 Database (DigitalAnnexSelect).
+        # Licensed databases come from Tools > J1939 Database (DigitalAnnexSelect).
         self.j1939db = {}
         self.load_j1939db()
         logger.info("Done Loading J1939db")
@@ -133,54 +137,10 @@ class CSU_RP1210(QMainWindow):
         self.rx_queues = {}
         self.tx_queues = {}
         progress_label.setText("Loading the J1587 Database")
-        try:
-            with open(os.path.join(module_directory,"J1587db.json"),'r') as j1587_file:
-                self.j1587db = json.load(j1587_file)
-        except FileNotFoundError:
-            logger.debug("J1587db.json file was not found.")
-            self.j1587db = { "FMI": {},
-                             "MID": {},
-                             "MIDAlias": {},
-                             "PID": {"168":{"BitResolution" : 0.05,
-                                            "Category" : "live",
-                                            "DataForm" : "a a",
-                                            "DataLength" : 2,
-                                            "DataType" : "Unsigned Integer",
-                                            "FormatStr" : "%0.2f",
-                                            "Maximum" : 3276.75,
-                                            "Minimum" : 0.0,
-                                            "Name" : "Battery Potential (Voltage)",
-                                            "Period" : "1",
-                                            "Priority" : 5,
-                                            "Unit" : "volts"},
-                                    "245" : { "BitResolution" : 0.1,
-                                              "Category" : "hist",
-                                              "DataForm" : "n a a a a",
-                                              "DataLength" : 4,
-                                              "DataType" : "Unsigned Long Integer",
-                                              "FormatStr" : "%0.1f",
-                                              "Maximum" : 429496729.5,
-                                              "Minimum" : 0.0,
-                                              "Name" : "Total Vehicle Distance",
-                                              "Period" : "10",
-                                              "Priority" : 7,
-                                              "Unit" : "miles"},
-                                    "247" : {
-                                        "BitResolution" : 0.05,
-                                        "Category" : "hist",
-                                        "DataForm" : "n a a a a",
-                                        "DataLength" : 4,
-                                        "DataType" : "Unsigned Long Integer",
-                                        "FormatStr" : "%0.2f",
-                                        "Maximum" : 214748364.8,
-                                        "Minimum" : 0.0,
-                                        "Name" : "Total Engine Hours",
-                                        "Period" : "On request",
-                                        "Priority" : 8,
-                                        "Unit" : "hours"}
-                                    },
-                             "PIDNames": {},
-                             "SID": {} }
+        # Like J1939: a skeleton J1587db.json ships with the program and the
+        # licensed database comes from Tools > J1587 Database (the SAE J1587 PDF).
+        self.j1587db = {}
+        self.load_j1587db()
         logger.info("Done Loading J1587db")
         progress.setValue(2)
         QCoreApplication.processEvents()
@@ -257,11 +217,36 @@ class CSU_RP1210(QMainWindow):
         open_logger2.triggered.connect(self.open_open_logger2)
         file_menu.addAction(open_logger2)
 
+        open_vehicle_spy = QAction(QIcon(os.path.join(module_directory,r'icons/logger2_48px.png')), 'Import &Vehicle Spy Log...', self)
+        open_vehicle_spy.setShortcut('Ctrl+Shift+I')
+        open_vehicle_spy.setStatusTip('Play a neoVI / Vehicle Spy 3 bus traffic file (.csv) through the J1939 and J1587 tabs')
+        open_vehicle_spy.triggered.connect(self.open_vehicle_spy)
+        file_menu.addAction(open_vehicle_spy)
+
+        # Tools Menu: databases from licensed SAE documents, and conversions.
+        tools_menu = menubar.addMenu('&Tools')
         j1939_database = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Data_Sheet_48px.png')), 'J1939 &Database...', self)
         j1939_database.setShortcut('Ctrl+D')
         j1939_database.setStatusTip('Create the J1939 database from a licensed Digital Annex and choose metric or US units.')
         j1939_database.triggered.connect(self.open_digital_annex_dialog)
-        file_menu.addAction(j1939_database)
+        tools_menu.addAction(j1939_database)
+
+        j1587_database = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Data_Sheet_48px.png')), 'J1587 Data&base...', self)
+        j1587_database.setShortcut('Ctrl+Shift+D')
+        j1587_database.setStatusTip('Create the J1587 database from the licensed SAE J1587 document (PDF).')
+        j1587_database.triggered.connect(self.open_j1587_database_dialog)
+        tools_menu.addAction(j1587_database)
+        tools_menu.addSeparator()
+
+        export_dbc = QAction('Export J1939 D&BC...', self)
+        export_dbc.setStatusTip('Write the loaded J1939 database as a CAN database (.dbc) for SavvyCAN, cantools or CANalyzer.')
+        export_dbc.triggered.connect(self.export_j1939_dbc)
+        tools_menu.addAction(export_dbc)
+
+        convert_spy = QAction('Convert Vehicle Spy Log to &candump...', self)
+        convert_spy.setStatusTip('Write the CAN traffic of a Vehicle Spy log as a candump log (csu command line, CSUCAN replay).')
+        convert_spy.triggered.connect(self.convert_vehicle_spy)
+        tools_menu.addAction(convert_spy)
 
 
         exit_action = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Close_Window_48px.png')), '&Quit', self)
@@ -509,7 +494,7 @@ class CSU_RP1210(QMainWindow):
         else:
             logger.debug("No J1939 database file was found.")
         if db.get("_meta", {}).get("skeleton"):
-            logger.warning("Only the skeleton J1939db.json is loaded. Use File > J1939 Database to create "
+            logger.warning("Only the skeleton J1939db.json is loaded. Use Tools > J1939 Database to create "
                            "a licensed database from the Digital Annex.")
         self.j1939db.clear()
         self.j1939db.update(db)
@@ -518,9 +503,130 @@ class CSU_RP1210(QMainWindow):
         dialog = DigitalAnnexDialog(self, storage_dir=get_storage_path())
         dialog.database_created.connect(lambda outputs: self.load_j1939db())
         dialog.exec_()
-        # The units preference may have changed even without regenerating.
+        # The units preference (shared with J1587) may have changed even without regenerating.
         self.load_j1939db()
+        self.load_j1587db()
         self.statusBar().showMessage("J1939 database reloaded ({} PGNs).".format(len(self.j1939db.get("J1939PGNdb", {}))))
+
+    def load_j1587db(self):
+        """
+        Load the J1587 database in place (the J1587 tab holds a reference to this dict).
+        Search order: $CSU_J1587DB, then the licensed database for the preferred
+        units (J1587db.us.licensed.json or J1587db.licensed.json), then the other
+        unit system, then the skeleton J1587db.json.
+        """
+        db = {"FMI": {}, "MID": {}, "MIDAlias": {}, "PID": {}, "PIDNames": {}, "SID": {}}
+        units = j1939db_tools.read_unit_preference(get_storage_path())
+        candidates = [os.environ.get("CSU_J1587DB")]
+        candidates += j1587db_tools.database_candidates(get_storage_path(), units)
+        candidates += j1587db_tools.database_candidates(module_directory, units)
+        for candidate in filter(None, candidates):
+            try:
+                with open(candidate, 'r', encoding='utf-8') as j1587_file:
+                    db.update(json.load(j1587_file))
+                logger.info("Loaded J1587 database from {} (preferred units: {})".format(candidate, units))
+                break
+            except FileNotFoundError:
+                continue
+        if db.get("_meta", {}).get("skeleton"):
+            logger.warning("Only the skeleton J1587db.json is loaded. Use Tools > J1587 Database to create "
+                           "a licensed database from the SAE J1587 document.")
+        self.j1587db.clear()
+        self.j1587db.update(db)
+
+    def open_j1587_database_dialog(self):
+        dialog = J1587DatabaseDialog(self, storage_dir=get_storage_path())
+        dialog.database_created.connect(lambda outputs: self.load_j1587db())
+        dialog.exec_()
+        self.load_j1587db()
+        self.load_j1939db()
+        self.statusBar().showMessage("J1587 database reloaded ({} PIDs).".format(len(self.j1587db.get("PID", {}))))
+
+    def export_j1939_dbc(self):
+        meta = self.j1939db.get("_meta", {})
+        if meta.get("skeleton") or not self.j1939db.get("J1939PGNdb"):
+            QMessageBox.information(self, "Export J1939 DBC",
+                "Only the skeleton J1939 database is loaded. Create the licensed database with "
+                "Tools > J1939 Database first.")
+            return
+        units = meta.get("units", "metric")
+        default = os.path.join(get_storage_path(), "J1939.{}.licensed.dbc".format(units))
+        fname, _ = QFileDialog.getSaveFileName(self, "Export J1939 DBC", default, "CAN database (*.dbc)")
+        if not fname:
+            return
+        text, stats = j1939_dbc.build(self.j1939db)
+        with open(fname, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        QMessageBox.information(self, "Export J1939 DBC",
+            "Wrote {} ({} units): {} messages, {} signals, {} value tables.\n\n{} SPNs that a DBC cannot "
+            "represent (text, variable length or split fields) are listed in the message comments.\n\n"
+            "The file contains licensed J1939 content: do not share or commit it.".format(
+                fname, units, stats["messages"], stats["signals"], stats["value_tables"], stats["skipped_spns"]))
+
+    def convert_vehicle_spy(self):
+        fname, _ = QFileDialog.getOpenFileName(self, "Vehicle Spy Log", self.export_path,
+                                               "Vehicle Spy logs (*.csv);;All Files (*.*)")
+        if not fname:
+            return
+        out, _ = QFileDialog.getSaveFileName(self, "Save candump log", os.path.splitext(fname)[0] + ".candump",
+                                             "candump log (*.candump *.log);;All Files (*.*)")
+        if not out:
+            return
+        n = vehicle_spy.to_candump(fname, out)
+        self.statusBar().showMessage("Wrote {} CAN frames to {}".format(n, out))
+
+    def open_vehicle_spy(self):
+        """Play a Vehicle Spy 3 log through the J1939 and J1587 tabs, as if read from an adapter."""
+        fname, _ = QFileDialog.getOpenFileName(self, "Import Vehicle Spy Log", self.export_path,
+                                               "Vehicle Spy logs (*.csv);;All Files (*.*)")
+        if fname:
+            self.import_vehicle_spy(fname)
+
+    def import_vehicle_spy(self, fname):
+        with open(fname, "rb") as f:
+            total = sum(1 for _ in f)
+        progress = QProgressDialog(self)
+        progress.setMinimumWidth(600)
+        progress.setWindowTitle("Importing Vehicle Spy Log")
+        progress.setMinimumDuration(0)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMaximum(total)
+        counts = {"J1939": 0, "J1587": 0, "skipped": 0}
+        reassembler = vehicle_spy.J1939Reassembler()
+        logger.info("Importing Vehicle Spy log {}".format(fname))
+        for i, record in enumerate(vehicle_spy.read(fname)):
+            timestamp = int(record.time * 1e6)
+            if isinstance(record, vehicle_spy.CANRecord):
+                if record.error or not record.extended:
+                    counts["skipped"] += 1
+                    continue
+                for priority, pgn, sa, da, data in reassembler.feed(record):
+                    buffer = vehicle_spy.rp1210_j1939(timestamp, priority, pgn, sa, da, data, echo=record.tx)
+                    try:
+                        self.J1939.fill_j1939_table({'current_time': record.time, 'data': buffer})
+                        counts["J1939"] += 1
+                    except Exception:
+                        logger.debug(traceback.format_exc())
+            elif record.checksum_ok and not record.error:
+                try:
+                    self.J1587.fill_j1587_table((record.time, vehicle_spy.rp1210_j1708(timestamp, record, echo=record.tx)))
+                    counts["J1587"] += 1
+                except Exception:
+                    logger.debug(traceback.format_exc())
+            else:
+                counts["skipped"] += 1
+            if i % 500 == 0:
+                progress.setValue(min(record.line, total))
+                progress.setLabelText("{} J1939 and {} J1708 messages".format(counts["J1939"], counts["J1587"]))
+                QCoreApplication.processEvents()
+                if progress.wasCanceled():
+                    break
+        progress.close()
+        message = "Imported {}: {} J1939 messages, {} J1708 messages, {} skipped.".format(
+            os.path.basename(fname), counts["J1939"], counts["J1587"], counts["skipped"])
+        logger.info(message)
+        self.statusBar().showMessage(message)
+        return counts
 
     def open_open_logger2(self):
         filters = "{} Data Files (*.bin);;All Files (*.*)".format(self.title)
@@ -613,7 +719,7 @@ class CSU_RP1210(QMainWindow):
                         rp1210_message += struct.pack('B', sa) 
                         rp1210_message += struct.pack('B', da) 
                         rp1210_message += data_bytes
-                        self.rx_queues["Logger"].put((timestamp, rp1210_message))
+                        self.rx_queues["Logger"].put({'current_time': timestamp, 'data': rp1210_message})
                     bytes_processed += 512
                     progress.setValue(bytes_processed)
                     progress_label.setText("Processed {:0.3f} of {:0.3f} Mbytes.".format(bytes_processed/1000000,file_size/1000000))

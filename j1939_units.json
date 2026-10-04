@@ -40,6 +40,7 @@
     "g/h": {"aliases": ["g/h", "g/hr"], "metric": "g/h", "us": "lb/h", "scale": 0.0022046226, "offset": 0},
     "kg/s": {"aliases": ["kg/s", "kg/sec"], "metric": "kg/s", "us": "lb/s", "scale": 2.2046226218, "offset": 0},
     "l/min": {"aliases": ["l/min"], "metric": "L/min", "us": "gallons/min", "scale": 0.2641720524, "offset": 0},
+    "l/s": {"aliases": ["l/s", "l/sec"], "metric": "L/s", "us": "gallons/s", "scale": 0.2641720524, "offset": 0},
     "kn": {"aliases": ["kn", "kilonewton", "kilonewtons"], "metric": "kN", "us": "lbf", "scale": 224.8089431, "offset": 0},
     "km^2/h^2": {"aliases": ["km^2/h^2", "km2/h2"], "metric": "km^2/h^2", "us": "mph^2", "scale": 0.3861021585, "offset": 0},
     "km^-1": {"aliases": ["km1", "km^1", "1/km", "perkm"], "metric": "1/km", "us": "1/mile", "scale": 1.609344, "offset": 0}

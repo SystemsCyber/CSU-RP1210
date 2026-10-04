@@ -8,9 +8,11 @@ Status: **Approved direction, Phase 1 started** · 2026-10-04
 |---|---|---|
 | 1 | Core language | **Rust core** approved. Workspace in `crates/`: `csu-bus`, `csu-j1939`, `csu-sec`, `csu` (CLI + web UI server). |
 | 2 | GUI | **Open.** Recommendation: web UI in a Tauri desktop shell (see §3.3). A working web tree view (`csu serve`) is available to judge speed. |
-| 3 | `J1939db.json` | Now a **skeleton** with the schema only. `DigitalAnnexSelect.py` (also File > J1939 Database) builds `J1939db.licensed.json` (metric) and `J1939db.us.licensed.json` (US customary) from the licensed Digital Annex via pretty_j1939. It validates and compares database versions and runs editable decode test vectors. The unit preference lives in `csu_settings.json`, shared by the Python app and the Rust core (`--units`). |
+| 3 | `J1939db.json` | Now a **skeleton** with the schema only. `DigitalAnnexSelect.py` (also Tools > J1939 Database) builds `J1939db.licensed.json` (metric) and `J1939db.us.licensed.json` (US customary) from the licensed Digital Annex via pretty_j1939. It validates and compares database versions and runs editable decode test vectors. The unit preference lives in `csu_settings.json`, shared by the Python app and the Rust core (`--units`). |
 | 4 | J1939-91C details | **Stubbed** (`TODO(J1939-91C)`). Only content from the public Golden Tester paper is implemented, and its four vectors pass. |
 | 5 | Architecture model | SysML v2 textual model in [`model/sysml/`](../model/sysml/README.md). |
+| 6 | `J1587db.json` | Also a **skeleton**. `j1587db_tools.py` (Tools > J1587 Database) builds metric and US databases from the licensed SAE J1587 PDF (and J1708 PDF for MIDs 0-127). Validated against J1939 on a recorded DDEC6 truck. |
+| 7 | Utilities | One **Tools** menu. The J1939Converters scripts were folded in: DBC export (`j1939_dbc.py`) from the application's database; JSON conversion dropped as a duplicate of the Digital Annex generator. Vehicle Spy 3 logs import into the GUI or convert to candump (`vehicle_spy.py`). |
 
 **Implemented so far** (`cargo test --workspace`: 43 tests pass):
 - **Backends:** RP1210, PCAN-Basic (classic and FD), SocketCAN (FD), candump replay, virtual loopback. Plus discovery of installed RP1210 drivers, including whether each DLL is 32- or 64-bit.

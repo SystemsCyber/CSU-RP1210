@@ -301,6 +301,26 @@ def apply_value_only_scaling(db, da_paths, log=None):
     return corrected
 
 
+def add_pgn_priorities(db, da_paths):
+    """Record each PGN's Digital Annex 'Default Priority' (used for DBC identifiers)."""
+    count = 0
+    for path in da_paths:
+        try:
+            names = _sheet_names(path)
+        except Exception:
+            continue
+        sheet = next((n for n in ("SPs & PGs", "SPNs & PGNs") if n in names), None)
+        if not sheet:
+            continue
+        for r in _table(path, sheet, "DEFAULT_PRIORITY"):
+            pgn, prio = _num(r.get("PGN")), _num(r.get("DEFAULT_PRIORITY"))
+            entry = db.get("J1939PGNdb", {}).get(str(int(pgn))) if pgn is not None else None
+            if entry is not None and prio is not None and "DefaultPriority" not in entry:
+                entry["DefaultPriority"] = int(prio)
+                count += 1
+    return count
+
+
 def to_us_customary(metric_db, table):
     """Return a US customary copy of a metric database plus conversion counts."""
     db = copy.deepcopy(metric_db)
@@ -337,6 +357,7 @@ def generate(da_paths, out_dir, systems=(METRIC, US), units_path=UNITS_FILE, log
                          "(sheet 'SPs & PGs' or 'SPNs & PGNs')?")
     metric = add_legacy_fields(raw, table)
     corrections = apply_value_only_scaling(metric, da_paths, log)
+    add_pgn_priorities(metric, da_paths)
     try:
         from importlib.metadata import version
         generator = f"pretty_j1939 {version('pretty_j1939')}"

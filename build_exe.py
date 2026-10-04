@@ -6,12 +6,12 @@ Build a portable, single-file CSU_RP1210.exe with PyInstaller.
 
 Output: dist/CSU_RP1210.exe (64-bit) or dist/CSU_RP1210_x86.exe (32-bit).
 
-Bundled: icons, version.json, the skeleton J1939db.json, j1939_units.json, the
-decode test vectors and (64-bit) the RP1210 32-to-64-bit bridge, so the 64-bit
+Bundled: icons, version.json, the skeleton J1939db.json and J1587db.json,
+j1939_units.json, the decode test vectors and (64-bit) the RP1210 32-to-64-bit bridge, so the 64-bit
 exe can also use 32-bit-only vendor drivers such as DG DPA5 (build it first with
 rp1210_bridge/build.bat). NOT bundled: licensed databases or Digital Annex workbooks.
 Put J1939db.licensed.json / J1939db.us.licensed.json next to the exe (or create
-them with File > J1939 Database); settings, the last RP1210 connection and
+them with Tools > J1939 Database); settings, the last RP1210 connection and
 CSU_RP1210.log are written there too, so the folder stays portable.
 """
 
@@ -26,8 +26,10 @@ DATA = [
     ("icons", "icons"),
     ("version.json", "."),
     ("J1939db.json", "."),
+    ("J1587db.json", "."),
     ("j1939_units.json", "."),
     (os.path.join("tests", "j1939db_vectors.json"), "tests"),
+    (os.path.join("tests", "j1587db_vectors.json"), "tests"),
 ]
 
 
