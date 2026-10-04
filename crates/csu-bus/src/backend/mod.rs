@@ -4,7 +4,7 @@
 //! |---|---|
 //! | `candump:FILE[,speed=1.0][,loop]` or a bare path | log replay |
 //! | `virtual` | in-process loopback (tests, demos) |
-//! | `socketcan:can0` | Linux SocketCAN, CAN FD enabled |
+//! | `socketcan:can0[,recv_own=false]` | Linux SocketCAN, CAN FD enabled |
 //! | `pcan:USBBUS1[,bitrate=250000][,dbitrate=2000000]` | PEAK PCAN-Basic (Windows, Linux) |
 //! | `rp1210:PEAKRP32[,device=1][,bitrate=250000]` | TMC RP1210 DLL (Windows) |
 
@@ -61,6 +61,11 @@ impl BusSpec {
         }
     }
 
+    /// True when `key` is explicitly set to false/0.
+    pub fn flag_false(&self, key: &str) -> bool {
+        self.options.get(key).is_some_and(|v| v == "false" || v == "0")
+    }
+
     pub fn flag(&self, key: &str) -> bool {
         self.options.get(key).is_some_and(|v| v != "false" && v != "0")
     }
@@ -76,7 +81,7 @@ pub fn open(spec: &str) -> Result<Box<dyn Bus>, BusError> {
         }
         "virtual" => Ok(Box::new(virtual_bus::VirtualBus::new())),
         #[cfg(target_os = "linux")]
-        "socketcan" => Ok(Box::new(socketcan::SocketCan::open(&s.target)?)),
+        "socketcan" => Ok(Box::new(socketcan::SocketCan::open_with(&s.target, !s.flag_false("recv_own"))?)),
         #[cfg(any(windows, target_os = "linux"))]
         "pcan" => Ok(Box::new(pcan::Pcan::open(
             &s.target,

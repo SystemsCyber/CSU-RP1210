@@ -58,6 +58,15 @@ type FnReadFd = unsafe extern "system" fn(Handle, *mut TPCANMsgFD, *mut u64) -> 
 type FnWrite = unsafe extern "system" fn(Handle, *mut TPCANMsg) -> Status;
 type FnWriteFd = unsafe extern "system" fn(Handle, *mut TPCANMsgFD) -> Status;
 type FnErrorText = unsafe extern "system" fn(Status, u16, *mut std::os::raw::c_char) -> Status;
+type FnGetValue = unsafe extern "system" fn(Handle, u8, *mut std::os::raw::c_void, u32) -> Status;
+
+const PCAN_CHANNEL_CONDITION: u8 = 0x0D;
+const PCAN_HARDWARE_NAME: u8 = 0x0E;
+const PCAN_CHANNEL_FEATURES: u8 = 0x16;
+const PCAN_CHANNEL_AVAILABLE: u32 = 0x01;
+const PCAN_CHANNEL_OCCUPIED: u32 = 0x02;
+const PCAN_CHANNEL_PCANVIEW: u32 = 0x03;
+const FEATURE_FD_CAPABLE: u32 = 0x01;
 
 struct Api {
     _lib: Library,
@@ -69,6 +78,7 @@ struct Api {
     write: FnWrite,
     write_fd: FnWriteFd,
     error_text: FnErrorText,
+    get_value: FnGetValue,
 }
 
 #[cfg(windows)]
@@ -96,6 +106,7 @@ impl Api {
                 write: sym!(b"CAN_Write\0"),
                 write_fd: sym!(b"CAN_WriteFD\0"),
                 error_text: sym!(b"CAN_GetErrorText\0"),
+                get_value: sym!(b"CAN_GetValue\0"),
                 _lib: lib,
             })
         }
@@ -121,6 +132,57 @@ impl Api {
     }
 }
 
+/// An attached PCAN channel, as reported by PCAN-Basic.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct PcanChannel {
+    /// Channel name usable in a `pcan:` bus spec, e.g. `USBBUS1`.
+    pub name: String,
+    pub handle: u16,
+    /// Adapter family: `USB`, `PCI` or `LAN`.
+    pub family: &'static str,
+    /// 1-based index within the family.
+    pub index: u16,
+    /// Hardware name reported by the driver, e.g. `PCAN-USB FD`.
+    pub hardware: String,
+    pub fd_capable: bool,
+    /// Another application already has the channel open.
+    pub occupied: bool,
+}
+
+/// All attached PCAN channels (USB, PCI and LAN, 1..16 each).
+pub fn list_channels() -> Result<Vec<PcanChannel>, BusError> {
+    let api = Api::load()?;
+    let mut out = Vec::new();
+    for (family, prefix, low, high) in [("USB", "USBBUS", 0x50u16, 0x500u16), ("PCI", "PCIBUS", 0x40, 0x400), ("LAN", "LANBUS", 0x800, 0x800)] {
+        for index in 1..=16u16 {
+            let handle = if family == "LAN" { low + index } else if index <= 8 { low + index } else { high + index };
+            let mut condition: u32 = 0;
+            // SAFETY: 4-byte output buffer for a DWORD parameter.
+            let st = unsafe { (api.get_value)(handle, PCAN_CHANNEL_CONDITION, &mut condition as *mut u32 as *mut _, 4) };
+            if st != PCAN_ERROR_OK || !matches!(condition, PCAN_CHANNEL_AVAILABLE | PCAN_CHANNEL_OCCUPIED | PCAN_CHANNEL_PCANVIEW) {
+                continue;
+            }
+            let mut name = [0u8; 33];
+            // SAFETY: PCAN-Basic writes at most MAX_LENGTH_HARDWARE_NAME (33) bytes.
+            unsafe { (api.get_value)(handle, PCAN_HARDWARE_NAME, name.as_mut_ptr() as *mut _, name.len() as u32) };
+            let end = name.iter().position(|b| *b == 0).unwrap_or(name.len());
+            let mut features: u32 = 0;
+            // SAFETY: 4-byte output buffer.
+            unsafe { (api.get_value)(handle, PCAN_CHANNEL_FEATURES, &mut features as *mut u32 as *mut _, 4) };
+            out.push(PcanChannel {
+                name: format!("{prefix}{index}"),
+                handle,
+                family,
+                index,
+                hardware: String::from_utf8_lossy(&name[..end]).trim().to_string(),
+                fd_capable: features & FEATURE_FD_CAPABLE != 0,
+                occupied: condition != PCAN_CHANNEL_AVAILABLE,
+            });
+        }
+    }
+    Ok(out)
+}
+
 /// Map a channel name such as `USBBUS1` or `PCIBUS3` to a PCAN handle.
 pub fn channel_handle(name: &str) -> Result<Handle, BusError> {
     let up = name.to_ascii_uppercase();
@@ -132,6 +194,7 @@ pub fn channel_handle(name: &str) -> Result<Handle, BusError> {
     let (low, high) = match prefix {
         "USBBUS" | "USB" => (0x50, 0x500),
         "PCIBUS" | "PCI" => (0x40, 0x400),
+        "LANBUS" | "LAN" => (0x800, 0x800),
         _ => return Err(BusError::Spec(format!("unsupported PCAN channel type '{prefix}'"))),
     };
     Ok(if n <= 8 { low + n } else { high + n })

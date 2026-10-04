@@ -551,87 +551,92 @@ class J1939Tab(QWidget):
         # Update if something has changed or if the time or voltage PGN comes in.
         if  data_bytes != previous_data_bytes or pgn in [65254, 65271]:
             self.look_up_spns(pgn, sa, data_bytes)
-            if pgn == 65254:  #Time / Date PGN    
-                seconds = int(self.unique_spns[repr((959, sa))]["Value"])
-                minutes = int(self.unique_spns[repr((960, sa))]["Value"])
-                hours   = int(self.unique_spns[repr((961, sa))]["Value"])
-                month   = int(self.unique_spns[repr((963, sa))]["Value"])
-                day     = int(self.unique_spns[repr((962, sa))]["Value"])
-                year    = int(self.unique_spns[repr((964, sa))]["Value"])
-                time_struct = time.strptime("{:02d} {:02d} {} ".format(day, month, year) + 
-                    "{:02d} {:02d} {:02d}".format(hours, minutes, seconds), "%d %m %Y %H %M %S")
+            # Summaries below need SPN definitions; with the skeleton (or an older)
+            # database some are missing, so skip those summaries instead of failing.
+            try:
+                if pgn == 65254:  #Time / Date PGN    
+                    seconds = int(self.unique_spns[repr((959, sa))]["Value"])
+                    minutes = int(self.unique_spns[repr((960, sa))]["Value"])
+                    hours   = int(self.unique_spns[repr((961, sa))]["Value"])
+                    month   = int(self.unique_spns[repr((963, sa))]["Value"])
+                    day     = int(self.unique_spns[repr((962, sa))]["Value"])
+                    year    = int(self.unique_spns[repr((964, sa))]["Value"])
+                    time_struct = time.strptime("{:02d} {:02d} {} ".format(day, month, year) + 
+                        "{:02d} {:02d} {:02d}".format(hours, minutes, seconds), "%d %m %Y %H %M %S")
             
-                # Save ecm time along with PC time as a tuple
-                new_ecm_time = calendar.timegm(time_struct) #Convert to UTC
-                #self.ecm_time[sa].append((time.time(), new_ecm_time)) #Put into floating point UTC
-                self.root.data_package["Time Records"][source_key]["Last ECM Time"] = new_ecm_time
-                self.root.data_package["Time Records"][source_key]["PC Time minus ECM Time"] = time.time() - new_ecm_time
+                    # Save ecm time along with PC time as a tuple
+                    new_ecm_time = calendar.timegm(time_struct) #Convert to UTC
+                    #self.ecm_time[sa].append((time.time(), new_ecm_time)) #Put into floating point UTC
+                    self.root.data_package["Time Records"][source_key]["Last ECM Time"] = new_ecm_time
+                    self.root.data_package["Time Records"][source_key]["PC Time minus ECM Time"] = time.time() - new_ecm_time
 
-            elif pgn == 65259: #Component ID
-                make   = self.unique_spns[repr((586, sa))]["Value"]
-                model  = self.unique_spns[repr((587, sa))]["Value"]
-                serial = self.unique_spns[repr((588, sa))]["Value"]
-                unit   = self.unique_spns[repr((233, sa))]["Value"]
-                self.root.data_package["Component Information"][source_key].update({"Make": make,
-                                                                                    "Model":model,
-                                                                                    "Serial":serial, 
-                                                                                    "Unit":unit})
-            elif pgn == 65260: #VIN
-                VIN = self.unique_spns[repr((237, sa))]["Value"].replace(b'\x00'.decode('ascii','ignore'),'') #Take out non-printable characters
-                self.root.data_package["Component Information"][source_key].update({"VIN": VIN})
-            elif pgn == 65242: #Software ID
-                #num_fields = self.unique_spns[repr((965, sa))]["Value"]
-                software = self.unique_spns[repr((234, sa))]["Value"].replace(b'\x00'.decode('ascii','ignore'),'') #Take out non-printable characters
-                self.root.data_package["Component Information"][source_key].update({"Software": software})
-            elif pgn == 65253:  # Engine Hours / Revolutions
-                if "Out" not in self.unique_spns[repr((247,sa))]["Meaning"]: 
-                    # The value is not out of range
-                    val = float(self.unique_spns[repr((247,sa))]["Value"])
-                    units = self.unique_spns[repr((247,sa))]["Units"]
-                    self.root.data_package["ECU Time Information"][source_key].update({"Total Engine Hours of Operation":"{:0.2f} {}".format(val,units)})
+                elif pgn == 65259: #Component ID
+                    make   = self.unique_spns[repr((586, sa))]["Value"]
+                    model  = self.unique_spns[repr((587, sa))]["Value"]
+                    serial = self.unique_spns[repr((588, sa))]["Value"]
+                    unit   = self.unique_spns[repr((233, sa))]["Value"]
+                    self.root.data_package["Component Information"][source_key].update({"Make": make,
+                                                                                        "Model":model,
+                                                                                        "Serial":serial, 
+                                                                                        "Unit":unit})
+                elif pgn == 65260: #VIN
+                    VIN = self.unique_spns[repr((237, sa))]["Value"].replace(b'\x00'.decode('ascii','ignore'),'') #Take out non-printable characters
+                    self.root.data_package["Component Information"][source_key].update({"VIN": VIN})
+                elif pgn == 65242: #Software ID
+                    #num_fields = self.unique_spns[repr((965, sa))]["Value"]
+                    software = self.unique_spns[repr((234, sa))]["Value"].replace(b'\x00'.decode('ascii','ignore'),'') #Take out non-printable characters
+                    self.root.data_package["Component Information"][source_key].update({"Software": software})
+                elif pgn == 65253:  # Engine Hours / Revolutions
+                    if "Out" not in self.unique_spns[repr((247,sa))]["Meaning"]: 
+                        # The value is not out of range
+                        val = float(self.unique_spns[repr((247,sa))]["Value"])
+                        units = self.unique_spns[repr((247,sa))]["Units"]
+                        self.root.data_package["ECU Time Information"][source_key].update({"Total Engine Hours of Operation":"{:0.2f} {}".format(val,units)})
             
-            elif pgn == 65255:  # Vehicle Hours
-                if "Out" not in self.unique_spns[repr((246,sa))]["Meaning"]: 
-                    # The value is not out of range
-                    val = float(self.unique_spns[repr((246,sa))]["Value"])
-                    units = self.unique_spns[repr((246,sa))]["Units"]
-                    self.root.data_package["ECU Time Information"][source_key].update({"Total Vehicle Hours":"{:0.2f} {}".format(val,units)})
+                elif pgn == 65255:  # Vehicle Hours
+                    if "Out" not in self.unique_spns[repr((246,sa))]["Meaning"]: 
+                        # The value is not out of range
+                        val = float(self.unique_spns[repr((246,sa))]["Value"])
+                        units = self.unique_spns[repr((246,sa))]["Units"]
+                        self.root.data_package["ECU Time Information"][source_key].update({"Total Vehicle Hours":"{:0.2f} {}".format(val,units)})
             
-            elif pgn == 65248:  # Total Vehicle Distance
-                if "Out" not in self.unique_spns[repr((245,sa))]["Meaning"]: 
-                    # The value is not out of range
-                    val = float(self.unique_spns[repr((245,sa))]["Value"])
-                    units = self.unique_spns[repr((245,sa))]["Units"]
-                    self.root.data_package["Distance Information"][source_key].update({"Total Vehicle Distance":"{:0.2f} {}".format(val,units)})
+                elif pgn == 65248:  # Total Vehicle Distance
+                    if "Out" not in self.unique_spns[repr((245,sa))]["Meaning"]: 
+                        # The value is not out of range
+                        val = float(self.unique_spns[repr((245,sa))]["Value"])
+                        units = self.unique_spns[repr((245,sa))]["Units"]
+                        self.root.data_package["Distance Information"][source_key].update({"Total Vehicle Distance":"{:0.2f} {}".format(val,units)})
             
-            elif pgn == 65217:  # High Resolution Distance
-                if "Out" not in self.unique_spns[repr((917,sa))]["Meaning"]: 
-                    # The value is not out of range
-                    val = float(self.unique_spns[repr((917,sa))]["Value"])
-                    units = self.unique_spns[repr((917,sa))]["Units"]
-                    if "METER" in units.upper():
-                        val = val * 0.000621371192 
-                        units = "miles"
-                    self.root.data_package["Distance Information"][source_key].update({"High Resolution Total Vehicle Distance":"{:0.4f} {}".format(val,units)})
+                elif pgn == 65217:  # High Resolution Distance
+                    if "Out" not in self.unique_spns[repr((917,sa))]["Meaning"]: 
+                        # The value is not out of range
+                        val = float(self.unique_spns[repr((917,sa))]["Value"])
+                        units = self.unique_spns[repr((917,sa))]["Units"]
+                        if "METER" in units.upper():
+                            val = val * 0.000621371192 
+                            units = "miles"
+                        self.root.data_package["Distance Information"][source_key].update({"High Resolution Total Vehicle Distance":"{:0.4f} {}".format(val,units)})
             
-            elif pgn == 65226: # DM01
-                self.dm01_data_model.aboutToUpdate()
-                self.active_trouble_codes.update(self.get_DM(sa, data_bytes))
-                self.dm01_data_model.setDataDict(self.active_trouble_codes)
-                self.fill_dm01_table()
+                elif pgn == 65226: # DM01
+                    self.dm01_data_model.aboutToUpdate()
+                    self.active_trouble_codes.update(self.get_DM(sa, data_bytes))
+                    self.dm01_data_model.setDataDict(self.active_trouble_codes)
+                    self.fill_dm01_table()
 
-            elif pgn == 65227: # DM02
-                self.dm02_data_model.aboutToUpdate()
-                self.previous_trouble_codes.update(self.get_DM(sa, data_bytes))
-                self.dm02_data_model.setDataDict(self.previous_trouble_codes)
-                self.fill_dm02_table()
+                elif pgn == 65227: # DM02
+                    self.dm02_data_model.aboutToUpdate()
+                    self.previous_trouble_codes.update(self.get_DM(sa, data_bytes))
+                    self.dm02_data_model.setDataDict(self.previous_trouble_codes)
+                    self.fill_dm02_table()
 
-            elif pgn == 65229: # DM04
-                logger.debug("Found DM04.")
-                self.dm04_data_model.aboutToUpdate()
-                self.freeze_frame.update(self.get_freeze_frame(sa, data_bytes))
-                self.dm04_data_model.setDataDict(self.freeze_frame)
-                self.fill_dm04_table()
+                elif pgn == 65229: # DM04
+                    logger.debug("Found DM04.")
+                    self.dm04_data_model.aboutToUpdate()
+                    self.freeze_frame.update(self.get_freeze_frame(sa, data_bytes))
+                    self.dm04_data_model.setDataDict(self.freeze_frame)
+                    self.fill_dm04_table()
+            except KeyError as missing:
+                logger.debug("PGN {} summary skipped: SPN {} not decoded with the loaded database".format(pgn, missing))
 
         self.root.data_package["J1939 Parameter Group Numbers"].update(self.j1939_unique_ids)
 

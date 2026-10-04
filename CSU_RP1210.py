@@ -188,8 +188,8 @@ class CSU_RP1210(QMainWindow):
 
         progress_label.setText("Initializing System Variables")
         if sys.platform == "win32":
-            os.system("TASKKILL /F /IM DGServer2.exe")
-            os.system("TASKKILL /F /IM DGServer1.exe")
+            os.system("TASKKILL /F /IM DGServer2.exe >nul 2>&1")
+            os.system("TASKKILL /F /IM DGServer1.exe >nul 2>&1")
         
         self.update_rate = 100
 
@@ -783,7 +783,7 @@ class CSU_RP1210(QMainWindow):
                                                                                   self.RP1210.ReadMessage, 
                                                                                   nClientID,
                                                                                   protocol,"CSU_RP1210")
-                    self.read_message_threads[protocol].setDaemon(True) #needed to close the thread when the application closes.
+                    self.read_message_threads[protocol].daemon = True #needed to close the thread when the application closes.
                     self.read_message_threads[protocol].start()
                     logger.debug("Started RP1210ReadMessage Thread.")
 

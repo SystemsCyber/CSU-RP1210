@@ -63,6 +63,12 @@ fn last_err(call: &'static str) -> BusError {
 
 impl SocketCan {
     pub fn open(iface: &str) -> Result<Self, BusError> {
+        Self::open_with(iface, true)
+    }
+
+    /// `recv_own`: receive this socket's own transmissions back (used for
+    /// evidence logging). Disable it when the caller echoes in software.
+    pub fn open_with(iface: &str, recv_own: bool) -> Result<Self, BusError> {
         let name = CString::new(iface).map_err(|_| BusError::Spec("interface name has NUL".into()))?;
         // SAFETY: plain libc calls with checked return values.
         unsafe {
@@ -80,8 +86,9 @@ impl SocketCan {
                 libc::close(fd);
                 return Err(last_err("setsockopt(CAN_RAW_FD_FRAMES)"));
             }
-            // Own transmissions come back so the evidence log includes them.
-            libc::setsockopt(fd, SOL_CAN_RAW, CAN_RAW_RECV_OWN_MSGS, &on as *const _ as *const c_void, sz);
+            if recv_own {
+                libc::setsockopt(fd, SOL_CAN_RAW, CAN_RAW_RECV_OWN_MSGS, &on as *const _ as *const c_void, sz);
+            }
             let addr = SockaddrCan { can_family: AF_CAN as u16, can_ifindex: ifindex as c_int, rx_id: 0, tx_id: 0, _union_tail: 0 };
             if libc::bind(fd, &addr as *const _ as *const libc::sockaddr, std::mem::size_of::<SockaddrCan>() as libc::socklen_t) < 0 {
                 libc::close(fd);

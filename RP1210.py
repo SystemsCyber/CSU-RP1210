@@ -28,6 +28,36 @@ BUFFER_SIZE = 8192
 BRIDGE_DLL = "rp1210_bridge64.dll"
 
 
+# CSUCAN: the project's own RP1210 driver (crates/csucan) for PEAK PCAN-Basic
+# adapters and Linux SocketCAN. It ships with the application rather than
+# being installed in the Windows directory.
+CSUCAN_NAME = "CSUCAN"
+CSUCAN_LIBRARY = "csucan.dll" if sys.platform == "win32" else "libcsucan.so"
+
+
+def find_csucan():
+    """Path of the bundled CSUCAN driver library, or None."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [getattr(sys, "_MEIPASS", None), os.path.dirname(sys.executable), here,
+                  os.path.join(here, "target", "release")]
+    for d in filter(None, candidates):
+        path = os.path.join(d, CSUCAN_LIBRARY)
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def write_csucan_ini(path):
+    """Have CSUCAN write its vendor INI (attached PEAK/SocketCAN devices) to path."""
+    lib_path = find_csucan()
+    if not lib_path:
+        return False
+    loader = windll if sys.platform == "win32" else cdll
+    lib = loader.LoadLibrary(lib_path)
+    lib.CSUCAN_WriteIni.restype = c_short
+    return lib.CSUCAN_WriteIni(c_char_p(os.fsencode(path))) == 0
+
+
 def find_rp1210_bridge():
     """Path of rp1210_bridge64.dll (with rp1210_host32.exe beside it), or None."""
     here = os.path.dirname(os.path.abspath(__file__))
@@ -180,6 +210,11 @@ class RP1210Class():
         (SysWOW64). A mismatched DLL cannot be loaded.
         """
         is_64bit = sys.maxsize > 2**32
+        if self.dll_name.upper() == CSUCAN_NAME:
+            path = find_csucan()
+            if path:
+                logger.info("Using the CSUCAN driver at {}".format(path))
+                return path
         windir = os.environ.get("WINDIR", r"C:\Windows")
         order = ["System32", "", "SysWOW64"] if is_64bit else ["SysWOW64", "", "System32"]
         mismatched = []

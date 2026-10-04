@@ -16,7 +16,7 @@ import json
 import configparser
 import traceback
 import logging
-from RP1210 import get_storage_path
+from RP1210 import get_storage_path, find_csucan, write_csucan_ini, CSUCAN_NAME
 logger = logging.getLogger(__name__)
 
 class SelectRP1210(QDialog):
@@ -26,18 +26,30 @@ class SelectRP1210(QDialog):
     def __init__(self,title):
         super(SelectRP1210,self).__init__()
         RP1210_config = configparser.ConfigParser()
+        self.apis = []
         try:
-            RP1210_config.read(os.path.join(os.environ["WINDIR"],"RP121032.ini"))
-            self.apis = sorted(RP1210_config["RP1210Support"]["apiimplementations"].split(","))
-            self.current_api_index = 0
-            logger.debug("Current RP1210 APIs installed are: " + ", ".join(self.apis))
-            self.rp1201_missing = False
-        except:
-            logger.warning(traceback.format_exc())
-            QMessageBox.warning(self,"No RP1210 Device","The RP121032.ini file was not found. Please install an RP1210 compliant Vehicle Diagnostics adatper.")
-            self.rp1201_missing = True
-            return
+            RP1210_config.read(os.path.join(os.environ.get("WINDIR", ""),"RP121032.ini"))
+            self.apis = sorted(a.strip() for a in RP1210_config["RP1210Support"]["apiimplementations"].split(",") if a.strip())
+        except (KeyError, configparser.Error):
+            logger.info("No vendor RP1210 drivers are registered (RP121032.ini not found).")
         storage = get_storage_path()
+        # CSUCAN (bundled): PEAK PCAN-Basic and SocketCAN devices, listed live
+        # in a generated vendor INI so new hardware shows up without vendor tools.
+        self.local_ini = {}
+        if find_csucan():
+            csucan_ini = os.path.join(storage, CSUCAN_NAME + ".ini")
+            try:
+                if write_csucan_ini(csucan_ini):
+                    self.local_ini[CSUCAN_NAME] = csucan_ini
+                    self.apis.append(CSUCAN_NAME)
+            except OSError:
+                logger.warning(traceback.format_exc())
+        self.current_api_index = 0
+        logger.debug("Current RP1210 APIs available are: " + ", ".join(self.apis))
+        self.rp1201_missing = not self.apis
+        if self.rp1201_missing:
+            QMessageBox.warning(self,"No RP1210 Device","No RP1210 drivers were found. Install an RP1210 compliant Vehicle Diagnostics Adapter, or a PEAK adapter driver for the built-in CSUCAN driver.")
+            return
         self.selection_filename = os.path.join(storage,"RP1210_selection.txt")
         logger.debug(f"selection_filename path: {self.selection_filename}")
         self.connections_file = os.path.join(storage,"Last_RP1210_Connection.json")
@@ -142,7 +154,8 @@ class SelectRP1210(QDialog):
         for api_string in self.apis:
             self.vendor_configs[api_string] = configparser.ConfigParser()
             try:
-                self.vendor_configs[api_string].read(os.path.join(os.environ["WINDIR"],api_string + ".ini"))
+                ini_path = self.local_ini.get(api_string) or os.path.join(os.environ.get("WINDIR", ""), api_string + ".ini")
+                self.vendor_configs[api_string].read(ini_path)
                 #logger.debug("api_string = {}".format(api_string))
                 #logger.debug("The api ini file has the following sections:")
                 #logger.debug(vendor_config.sections())

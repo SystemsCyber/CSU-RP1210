@@ -49,6 +49,12 @@ def main():
         else:
             print("warning: rp1210_bridge/bin not built (run rp1210_bridge/build.bat); "
                   "the exe will not support 32-bit-only RP1210 drivers")
+    # CSUCAN: the bundled RP1210 driver for PEAK PCAN-Basic adapters (crates/csucan).
+    csucan = os.path.join(ROOT, "target", "release", "csucan.dll" if os.name == "nt" else "libcsucan.so")
+    if is_64bit and os.path.exists(csucan):
+        args += ["--add-binary", f"{csucan}{SEP}."]
+    elif is_64bit:
+        print("warning: CSUCAN not built (cargo build --release -p csucan); PEAK adapters will rely on PEAK's RP1210 driver")
     args.append(os.path.join(ROOT, "CSU_RP1210.py"))
     print(" ".join(args))
     subprocess.run(args, cwd=ROOT, check=True)
