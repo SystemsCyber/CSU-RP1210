@@ -19,6 +19,18 @@ import logging
 from RP1210 import get_storage_path, find_csucan, write_csucan_ini, CSUCAN_NAME
 logger = logging.getLogger(__name__)
 
+
+def select_item(combo, key, separator):
+    """Select the entry whose text (or its part before separator) is key; True if found."""
+    if key is None or key is False:
+        return False
+    for i in range(combo.count()):
+        text = combo.itemText(i)
+        if (text.split(separator)[0] if separator else text).strip() == str(key).strip():
+            combo.setCurrentIndex(i)
+            return True
+    return False
+
 class SelectRP1210(QDialog):
     """
     A Qt dialog box that parses the RP1210 ini files to enable a user to select the RP1210 device. 
@@ -54,10 +66,6 @@ class SelectRP1210(QDialog):
         logger.debug(f"selection_filename path: {self.selection_filename}")
         self.connections_file = os.path.join(storage,"Last_RP1210_Connection.json")
         logger.debug(f"connections_file path: {self.connections_file}")
-        
-        self.setup_dialog()
-        self.setWindowTitle("Select RP1210")
-        self.setWindowModality(Qt.ApplicationModal)
         logger.debug("Looking for RP1210 Settings in {}".format(self.connections_file))
         try:
             with open(self.connections_file,"r") as rp1210_file:
@@ -67,14 +75,23 @@ class SelectRP1210(QDialog):
             self.deviceID = file_contents["deviceID"]
             self.speed    = file_contents["speed"]
             self.channel  = file_contents.get("channel", 1)
-        except:
-            logger.warning(traceback.format_exc())
+        except (OSError, ValueError, KeyError, TypeError):
+            logger.info("No previous RP1210 connection in {}".format(self.connections_file))
             self.dll_name = False
             self.protocol = False
             self.deviceID = False
             self.speed = False
             self.channel = 1
-        
+        # The dialog selects by name from each vendor INI: the last connection's
+        # vendor, device, protocol and speed when that adapter offers them,
+        # otherwise J1939 at 250 kbit/s (list positions differ between vendors).
+        self.preferred = {"dll_name": self.dll_name, "deviceID": self.deviceID,
+                          "protocol": self.protocol or "J1939", "speed": self.speed or "250"}
+
+        self.setup_dialog()
+        self.setWindowTitle("Select RP1210")
+        self.setWindowModality(Qt.ApplicationModal)
+
     
     def show_dialog(self):
         self.exec_()
@@ -98,7 +115,7 @@ class SelectRP1210(QDialog):
         self.protocol_combo_box = QComboBox()
         self.protocol_combo_box.setInsertPolicy(QComboBox.NoInsert)
         self.protocol_combo_box.setSizeAdjustPolicy(QComboBox.AdjustToContents)
-        self.protocol_combo_box.activated.connect(self.fill_speed)
+        self.protocol_combo_box.activated.connect(self.protocol_chosen)
 
         channel_label = QLabel("Channel (multi-channel adapters):")
         self.channel_combo_box = QComboBox()
@@ -110,6 +127,7 @@ class SelectRP1210(QDialog):
         self.speed_combo_box = QComboBox()
         self.speed_combo_box.setInsertPolicy(QComboBox.NoInsert)
         self.speed_combo_box.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.speed_combo_box.activated.connect(self.speed_chosen)
 
 
         self.buttons = QDialogButtonBox(
@@ -172,12 +190,12 @@ class SelectRP1210(QDialog):
             except:
                 logger.warning(traceback.format_exc())
                 self.apis.remove(api_string) #remove faulty/corrupt api_string
-        try:
-            self.vendor_combo_box.setCurrentIndex(int(self.selection_index[0]))
-        except:
-            self.selection_index = '0,0,0'.split(',')
-            self.vendor_combo_box.setCurrentIndex(int(self.selection_index[0]))
-            pass
+        if not (self.preferred["dll_name"] and select_item(self.vendor_combo_box, self.preferred["dll_name"], "-")):
+            try:   # older installs: only the list positions in RP1210_selection.txt
+                index = int(self.selection_index[0])
+            except (ValueError, IndexError):
+                index = 0
+            self.vendor_combo_box.setCurrentIndex(index if 0 <= index < self.vendor_combo_box.count() else 0)
 
         if self.vendor_combo_box.count() > 0:
             self.fill_device()
@@ -228,10 +246,9 @@ class SelectRP1210(QDialog):
                 device_combo_box_entry = "{}: {}, {}".format(device_id,device_name,device_description)
                 if len(device_combo_box_entry) > 0:
                     self.device_combo_box.addItem(device_combo_box_entry)
-        try:
-            self.device_combo_box.setCurrentIndex(int(self.selection_index[1]))
-        except:
-            pass
+        # The saved device ID applies only to the adapter it was saved for.
+        if self.api_string == self.preferred["dll_name"]:
+            select_item(self.device_combo_box, self.preferred["deviceID"], ":")
         self.fill_protocol()
 
     def fill_protocol(self):
@@ -245,40 +262,32 @@ class SelectRP1210(QDialog):
 
         self.protocol_speed = {}
         for key in self.vendor_configs[self.api_string]:
-            if "ProtocolInformation" in key:
-                try:
-                    protocol_string = self.vendor_configs[self.api_string][key]["ProtocolString"]
-                except KeyError:
-                    protocol_string = None
-                    logger.debug("No Protocol Name for {} in {}.ini".format(key,self.api_string))
-                try:
-                    protocol_description = self.vendor_configs[self.api_string][key]["ProtocolDescription"]
-                except KeyError:
-                    protocol_description = "No protocol description available"
-                try:
-                    if protocol_string is not None:
-                        self.protocol_speed[protocol_string] = self.vendor_configs[self.api_string][key]["ProtocolSpeed"]
-                    else:
-                        self.protocol_speed[protocol_string] = ""
-                except KeyError:
-                    self.protocol_speed[protocol_string] = ""
-                try:
-                    protocol_params = self.vendor_configs[self.api_string][key]["ProtocolParams"]
-                except KeyError:
-                    protocol_params = ""
-
-                devices = self.vendor_configs[self.api_string][key]["Devices"].split(',')
-                if self.device_id in devices and protocol_string is not None:
-                    device_combo_box_entry = "{}: {}".format(protocol_string,protocol_description)
-                    self.protocol_combo_box.addItem(device_combo_box_entry)
-            else:
-                pass
-        try:
-            self.protocol_combo_box.setCurrentIndex(int(self.selection_index[2]))
-
-        except:
-            logger.warning(traceback.format_exc())
+            if "ProtocolInformation" not in key:
+                continue
+            section = self.vendor_configs[self.api_string][key]
+            protocol_string = section.get("ProtocolString", "").strip()
+            if not protocol_string:
+                logger.debug("No Protocol Name for {} in {}.ini".format(key,self.api_string))
+                continue
+            protocol_description = section.get("ProtocolDescription", "No protocol description available")
+            devices = [d.strip() for d in section.get("Devices", "").split(',')]
+            if self.device_id in devices:
+                self.protocol_speed[protocol_string] = section.get("ProtocolSpeed", "")
+                self.protocol_combo_box.addItem("{}: {}".format(protocol_string,protocol_description))
+        # Keep the chosen protocol when this adapter offers it, else the first real one.
+        if not select_item(self.protocol_combo_box, self.preferred["protocol"], ":"):
+            for i in range(self.protocol_combo_box.count()):
+                if not self.protocol_combo_box.itemText(i).startswith("NULL:"):
+                    self.protocol_combo_box.setCurrentIndex(i)
+                    break
         self.fill_speed()
+
+    def protocol_chosen(self):
+        self.preferred["protocol"] = self.protocol_combo_box.currentText().split(":")[0].strip()
+        self.fill_speed()
+
+    def speed_chosen(self):
+        self.preferred["speed"] = self.speed_combo_box.currentText()
 
     def saved_channel(self):
         try:
@@ -292,10 +301,14 @@ class SelectRP1210(QDialog):
         count = self.device_channels.get(str(self.device_id), 1)
         self.channel_combo_box.addItems([str(c) for c in range(1, count + 1)])
         self.channel_combo_box.setEnabled(count > 1)
-        try:
-            previous = int(getattr(self, "channel", None) or self.saved_channel())
-        except (TypeError, ValueError):
-            previous = 1
+        # The saved channel applies only to the adapter and device it was saved for.
+        previous = 1
+        if (self.api_string == self.preferred["dll_name"]
+                and str(self.device_id) == str(self.preferred["deviceID"]).strip()):
+            try:
+                previous = int(getattr(self, "channel", None) or self.saved_channel())
+            except (TypeError, ValueError):
+                previous = 1
         if 1 <= previous <= count:
             self.channel_combo_box.setCurrentIndex(previous - 1)
 
@@ -308,13 +321,14 @@ class SelectRP1210(QDialog):
                 self.protocol_combo_box.setCurrentIndex(0)
         self.device_id = self.device_combo_box.currentText().split(":")[0].strip()
         protocol_string = self.protocol_combo_box.currentText().split(":")[0].strip()
-        logger.debug(protocol_string)
-        logger.debug(self.protocol_speed[protocol_string])
-        try:
-            protocol_speed = sorted(self.protocol_speed[protocol_string].strip().split(','),reverse=True)
-            self.speed_combo_box.addItems(protocol_speed)
-        except Exception as e:
-            logger.warning(traceback.format_exc())
+        # Speeds in the order the vendor INI lists them.
+        speeds = []
+        for s in self.protocol_speed.get(protocol_string, "").split(','):
+            if s.strip() and s.strip() not in speeds:
+                speeds.append(s.strip())
+        logger.debug("{} speeds: {}".format(protocol_string, speeds))
+        self.speed_combo_box.addItems(speeds)
+        select_item(self.speed_combo_box, self.preferred["speed"], None)
 
     def connect_RP1210(self):
         if self.rp1201_missing:
