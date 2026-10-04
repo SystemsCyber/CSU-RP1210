@@ -7,8 +7,15 @@
 //!
 //! 1. an explicit path (`--db`)
 //! 2. the `CSU_J1939DB` environment variable
-//! 3. `J1939db.licensed.json` (git-ignored) in the working directory, then next to the executable
-//! 4. `J1939db.json` in the working directory, then next to the executable
+//! 3. the licensed database for the preferred unit system
+//!    (`J1939db.licensed.json` = metric, `J1939db.us.licensed.json` = US customary),
+//!    then the other unit system, in the working directory, then next to the executable
+//! 4. `J1939db.json` (the skeleton)
+//!
+//! The unit preference comes from `--units`, `$CSU_UNITS`, or `j1939_units` in
+//! `csu_settings.json` (written by the DigitalAnnexSelect dialog). Both licensed
+//! files are produced from the Digital Annex by `DigitalAnnexSelect.py` or
+//! `j1939db_tools.py generate`.
 //!
 //! Two schemas are accepted:
 //! * **legacy** (the CSU-RP1210 file): each SPN carries its own `StartBit`
@@ -82,6 +89,70 @@ pub struct DbMeta {
     pub sources: Vec<String>,
     /// True if only the skeleton (no licensed content) is loaded.
     pub skeleton_only: bool,
+    /// Declared unit system (`_meta.units`), when present.
+    pub units: Option<UnitSystem>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UnitSystem {
+    Metric,
+    Us,
+}
+
+impl UnitSystem {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "metric" | "si" => Some(UnitSystem::Metric),
+            "us" | "us-customary" | "imperial" => Some(UnitSystem::Us),
+            _ => None,
+        }
+    }
+
+    pub fn licensed_file(self) -> &'static str {
+        match self {
+            UnitSystem::Metric => "J1939db.licensed.json",
+            UnitSystem::Us => "J1939db.us.licensed.json",
+        }
+    }
+
+    pub fn other(self) -> Self {
+        match self {
+            UnitSystem::Metric => UnitSystem::Us,
+            UnitSystem::Us => UnitSystem::Metric,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            UnitSystem::Metric => "metric",
+            UnitSystem::Us => "us",
+        }
+    }
+}
+
+fn exe_dir() -> Option<PathBuf> {
+    std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf))
+}
+
+/// Unit preference: `$CSU_UNITS`, then `j1939_units` in `csu_settings.json`
+/// (working directory, then next to the executable), else metric.
+pub fn preferred_units() -> UnitSystem {
+    if let Some(u) = std::env::var("CSU_UNITS").ok().as_deref().and_then(UnitSystem::parse) {
+        return u;
+    }
+    let mut dirs = vec![PathBuf::from(".")];
+    dirs.extend(exe_dir());
+    for d in dirs {
+        let Ok(bytes) = std::fs::read(d.join("csu_settings.json")) else { continue };
+        let pref = serde_json::from_slice::<Value>(&bytes)
+            .ok()
+            .and_then(|v| v.get("j1939_units").and_then(Value::as_str).and_then(UnitSystem::parse));
+        if let Some(u) = pref {
+            return u;
+        }
+    }
+    UnitSystem::Metric
 }
 
 #[derive(Clone, Debug, Default)]
@@ -133,18 +204,22 @@ fn text(v: Option<&Value>) -> String {
     }
 }
 
-/// Resolve the database path using the documented search order.
+/// Resolve the database path using the documented search order and the
+/// preferred unit system.
 pub fn locate(explicit: Option<&Path>) -> Option<PathBuf> {
+    locate_with_units(explicit, preferred_units())
+}
+
+pub fn locate_with_units(explicit: Option<&Path>, units: UnitSystem) -> Option<PathBuf> {
     if let Some(p) = explicit {
         return Some(p.to_path_buf());
     }
     if let Some(p) = std::env::var_os("CSU_J1939DB") {
         return Some(PathBuf::from(p));
     }
-    let exe_dir = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf));
-    for name in ["J1939db.licensed.json", "J1939db.json"] {
+    for name in [units.licensed_file(), units.other().licensed_file(), "J1939db.json"] {
         let mut dirs = vec![PathBuf::from(".")];
-        dirs.extend(exe_dir.clone());
+        dirs.extend(exe_dir());
         for d in dirs {
             let p = d.join(name);
             if p.is_file() {
@@ -166,15 +241,20 @@ impl CompiledDb {
 
     /// Load the database found by [`locate`]; an empty database if none.
     pub fn load_default(explicit: Option<&Path>) -> Result<Self, DbError> {
-        match locate(explicit) {
+        Self::load_default_with_units(explicit, preferred_units())
+    }
+
+    pub fn load_default_with_units(explicit: Option<&Path>, units: UnitSystem) -> Result<Self, DbError> {
+        match locate_with_units(explicit, units) {
             Some(p) => Self::load(&p),
-            None => Ok(CompiledDb { meta: DbMeta { sources: vec![], skeleton_only: true }, ..Default::default() }),
+            None => Ok(CompiledDb { meta: DbMeta { skeleton_only: true, ..Default::default() }, ..Default::default() }),
         }
     }
 
     pub fn from_json(json: &Value) -> Self {
         let mut db = CompiledDb::default();
         db.meta.skeleton_only = json.pointer("/_meta/skeleton").and_then(Value::as_bool).unwrap_or(false);
+        db.meta.units = json.pointer("/_meta/units").and_then(Value::as_str).and_then(UnitSystem::parse);
 
         if let Some(spns) = json.get("J1939SPNdb").and_then(Value::as_object) {
             for (k, v) in spns {
@@ -355,8 +435,7 @@ fn parse_pgn(pgn: u32, v: &Value, spns: &HashMap<u32, SpnDef>) -> PgnDef {
         .enumerate()
         .map(|(i, spn)| {
             let start_bit = match starts.and_then(|s| s.get(i)) {
-                Some(Value::Array(parts)) if parts.len() == 1 => num(parts.first()),
-                Some(Value::Array(_)) => None, // split across non-contiguous bytes: not yet supported
+                Some(Value::Array(parts)) => resolve_start_list(parts, spns.get(spn).and_then(|d| d.length)),
                 Some(x) => num(Some(x)),
                 None => spns.get(spn).and_then(|d| d.legacy_start.map(f64::from)),
             }
@@ -372,6 +451,24 @@ fn parse_pgn(pgn: u32, v: &Value, spns: &HashMap<u32, SpnDef>) -> PgnDef {
         length: num(v.get("PGNLength")).map(|l| l as usize),
         rate: text(v.get("Rate")),
         spns: slots,
+    }
+}
+
+/// Resolve a pretty_j1939 `SPNStartBits` list to one contiguous start bit.
+///
+/// Byte ranges are stored as `[first, last_byte_start]` (e.g. "1-4" -> `[0, 24]`).
+/// A pair is one contiguous little-endian field when the field's last bit
+/// falls inside the byte that starts at the second value. Anything else is a
+/// genuinely split field, which is not decoded yet (`None`).
+fn resolve_start_list(parts: &[Value], length: Option<u32>) -> Option<f64> {
+    let vals: Vec<f64> = parts.iter().filter_map(|p| num(Some(p))).collect();
+    match (vals.as_slice(), length) {
+        ([a], _) => Some(*a),
+        ([a, b], Some(len)) if *a >= 0.0 && b >= a => {
+            let end = a + len as f64 - 1.0;
+            (*b <= end && end < b + 8.0).then_some(*a)
+        }
+        _ => None,
     }
 }
 
@@ -488,6 +585,34 @@ mod tests {
         let v = db.decode(65280, &[0xFF; 8]);
         assert_eq!(v[0].status, SpnStatus::NotAvailable);
         assert_eq!(v[0].value, None);
+    }
+
+    #[test]
+    fn multi_byte_start_lists_resolve() {
+        let db = CompiledDb::from_json(&json!({
+            "J1939PGNdb": {"65281": {"Label": "X", "Name": "X", "PGNLength": "8",
+                "SPNs": [520197, 520198, 520200], "SPNStartBits": [[0, 24], [32, 56], [40, 621]]}},
+            "J1939SPNdb": {
+                "520197": {"Name": "Distance", "SPNLength": 32, "Resolution": 0.125, "Offset": 0, "Units": "km"},
+                "520198": {"Name": "Volume", "SPNLength": 32, "Resolution": 0.5, "Offset": 0, "Units": "L"},
+                "520200": {"Name": "Split", "SPNLength": 12, "Resolution": 1, "Offset": 0, "Units": ""}}
+        }));
+        let slots = &db.pgns[&65281].spns;
+        assert_eq!(slots[0].start_bit, Some(0));
+        assert_eq!(slots[1].start_bit, Some(32));
+        assert_eq!(slots[2].start_bit, None);
+        let v = db.decode(65281, &[0x00, 0x35, 0x0C, 0x00, 0xC8, 0x00, 0x00, 0x00]);
+        assert_eq!(v[0].value, Some(100_000.0));
+        assert_eq!(v[1].value, Some(100.0));
+    }
+
+    #[test]
+    fn unit_system_names() {
+        assert_eq!(UnitSystem::parse("US"), Some(UnitSystem::Us));
+        assert_eq!(UnitSystem::Us.licensed_file(), "J1939db.us.licensed.json");
+        assert_eq!(UnitSystem::Metric.other(), UnitSystem::Us);
+        let db = CompiledDb::from_json(&json!({"_meta": {"units": "us"}, "J1939PGNdb": {}, "J1939SPNdb": {}}));
+        assert_eq!(db.meta.units, Some(UnitSystem::Us));
     }
 
     #[test]

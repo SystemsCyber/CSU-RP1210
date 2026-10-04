@@ -16,7 +16,7 @@ pub mod name;
 pub mod summary;
 pub mod tp;
 
-pub use db::{CompiledDb, SpnStatus, SpnValue};
+pub use db::{CompiledDb, SpnStatus, SpnValue, UnitSystem};
 pub use id::J1939Id;
 
 /// A J1939 parameter group as seen by applications: either a single frame or

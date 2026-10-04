@@ -22,6 +22,10 @@ struct Cli {
     /// Additional data packs layered over the database (repeatable).
     #[arg(long = "pack", global = true)]
     packs: Vec<PathBuf>,
+    /// Unit system of the licensed database to load: metric or us
+    /// (defaults: $CSU_UNITS, csu_settings.json, metric).
+    #[arg(long, global = true, value_parser = parse_units)]
+    units: Option<csu_j1939::UnitSystem>,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -57,8 +61,13 @@ enum Cmd {
     },
 }
 
+fn parse_units(s: &str) -> Result<csu_j1939::UnitSystem, String> {
+    csu_j1939::UnitSystem::parse(s).ok_or_else(|| format!("expected 'metric' or 'us', got '{s}'"))
+}
+
 fn load_db(cli: &Cli) -> CompiledDb {
-    let mut db = match CompiledDb::load_default(cli.db.as_deref()) {
+    let units = cli.units.unwrap_or_else(csu_j1939::db::preferred_units);
+    let mut db = match CompiledDb::load_default_with_units(cli.db.as_deref(), units) {
         Ok(db) => db,
         Err(e) => {
             eprintln!("warning: {e}; continuing without a database");
@@ -71,10 +80,14 @@ fn load_db(cli: &Cli) -> CompiledDb {
             Err(e) => eprintln!("warning: data pack {e}"),
         }
     }
+    if let Some(src) = db.meta.sources.first() {
+        let declared = db.meta.units.map(|u| u.name()).unwrap_or("undeclared");
+        eprintln!("J1939 database: {src} (units: {declared})");
+    }
     if db.meta.skeleton_only {
         eprintln!(
-            "note: only the skeleton J1939 database is loaded. Place your licensed database at \
-             J1939db.licensed.json or pass --db to decode SPNs."
+            "note: only the skeleton J1939 database is loaded. Create a licensed database from your \
+             Digital Annex with DigitalAnnexSelect.py (or j1939db_tools.py generate) to decode SPNs."
         );
     }
     db
