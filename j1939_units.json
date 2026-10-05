@@ -45,5 +45,6 @@
     "km^2/h^2": {"aliases": ["km^2/h^2", "km2/h2"], "metric": "km^2/h^2", "us": "mph^2", "scale": 0.3861021585, "offset": 0},
     "km^-1": {"aliases": ["km1", "km^1", "1/km", "perkm"], "metric": "1/km", "us": "1/mile", "scale": 1.609344, "offset": 0}
   },
-  "labels": {"_doc": "Display labels for units that are not converted (applied in both databases).", "ascii": "ASCII", "v": "V", "a": "A", "hz": "Hz", "khz": "kHz", "mhz": "MHz", "w": "W", "kwh": "kWh", "va": "VA", "var": "VAr", "ohm": "ohm", "rpm": "rpm", "s": "s", "ms": "ms", "h": "h", "min": "min"}
+  "labels": {"_doc": "Display labels for units that are not converted (applied in both databases).", "ascii": "ASCII", "v": "V", "a": "A", "hz": "Hz", "khz": "kHz", "mhz": "MHz", "w": "W", "kwh": "kWh", "va": "VA", "var": "VAr", "ohm": "ohm", "rpm": "rpm", "s": "s", "ms": "ms", "h": "h", "min": "min",
+             "hr": "h", "volts": "V", "amps": "A", "seconds": "s", "milliseconds": "ms"}
 }

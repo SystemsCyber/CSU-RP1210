@@ -76,6 +76,29 @@ def write_unit_preference(units, directory=None):
     return path
 
 
+def read_setting(key, default=None, directory=None):
+    """A value from csu_settings.json (e.g. 'j1939_industry_group'), or default."""
+    try:
+        with open(os.path.join(directory or os.getcwd(), SETTINGS_FILE)) as f:
+            return json.load(f).get(key, default)
+    except (OSError, ValueError, AttributeError):
+        return default
+
+
+def write_setting(key, value, directory=None):
+    path = os.path.join(directory or os.getcwd(), SETTINGS_FILE)
+    settings = {}
+    try:
+        with open(path) as f:
+            settings = json.load(f)
+    except (OSError, ValueError):
+        pass
+    settings[key] = value
+    with open(path, "w") as f:
+        json.dump(settings, f, indent=2)
+    return path
+
+
 def database_candidates(directory, units):
     """Licensed database file names in search order for a unit preference."""
     first, second = (OUTPUT_NAMES[US], OUTPUT_NAMES[METRIC]) if units == US else (OUTPUT_NAMES[METRIC], OUTPUT_NAMES[US])
@@ -216,6 +239,177 @@ def _sha256(path):
     return h.hexdigest()
 
 
+# --------------------------------------------------------------------------
+# Older Digital Annex layouts
+# --------------------------------------------------------------------------
+
+# Sheet names pretty_j1939 reads.
+SPN_SHEET_NAMES = ("SPNs & PGNs", "SPs & PGs")
+# Older column headers (normalized with _header_key) -> the header pretty_j1939 reads.
+HEADER_SYNONYMS = {
+    "POS": "SPN Position in PGN", "POSITION": "SPN Position in PGN", "SPN_POSITION": "SPN Position in PGN",
+    "SPN_POS": "SPN Position in PGN", "POSITION_IN_PGN": "SPN Position in PGN",
+    "NAME": "SPN Name", "SPN_LABEL": "SPN Name",
+    "DESCRIPTION": "SPN Description",
+    "PGN_LENGTH": "PGN Data Length", "PG_LENGTH": "PGN Data Length", "DATA_LENGTH": "PGN Data Length",
+    "LENGTH": "SPN Length",
+    "LABEL": "Parameter Group Label", "PGN_LABEL": "Parameter Group Label", "PARAMETER_GROUP_NAME": "Parameter Group Label",
+    "PGN_ACRONYM": "Acronym", "RATE": "Transmission Rate", "UNIT": "Units", "SCALING": "Resolution",
+}
+# "0.125 km/bit", "1/256 km/h per bit", "1 deg C/bit" -> the unit.
+_RESOLUTION_UNIT = re.compile(r"^\s*-?[\d.,]+(?:\s*/\s*[\d.,]+)?\s+(.+?)\s*(?:/\s*bit|per bit)\s*$", re.I)
+# Other tables: (role, name pattern, header that identifies the content) -> sheet name pretty_j1939 reads.
+OTHER_SHEETS = [
+    (r"^slots?\b", "SLOT_IDENTIFIER", "SLOTs"),
+    (r"global source address", "SOURCE_ADDRESS_ID", "Global Source Addresses (B2)"),
+    (r"manufacturer", "MANUFACTURER", "Manufacturer IDs (B10)"),
+    (r"industry group", None, "Industry Groups (B1)"),
+    (r"^global (name )?functions?|global name function", None, "Global NAME Functions (B11)"),
+    (r"ig specific name function", None, "IG Specific NAME Function (B12)"),
+    (r"^(global )?vehicle systems?", None, "Global Vehicle Systems"),
+]
+
+
+def _first_rows(path, sheet, n=15):
+    rows = []
+    for i, row in enumerate(_sheet_rows(path, sheet)):
+        rows.append(row)
+        if i >= n:
+            break
+    return rows
+
+
+def _header_keys(rows):
+    """(index, keys) of the first row that looks like a header (several text cells)."""
+    for i, row in enumerate(rows):
+        keys = [_header_key(c) for c in row]
+        if sum(1 for k in keys if k and not k.replace("_", "").isdigit()) >= 2:
+            yield i, keys
+
+
+def find_spn_sheet(path):
+    """(sheet name, header keys) of the SPN/PGN table, recognized by its columns (PGN and SPN)
+    rather than its name ('SPs & PGs', 'SPNs & PGNs', 'SPN & PGN', ...). None if there is none."""
+    names = _sheet_names(path)
+    ordered = sorted(names, key=lambda n: (not re.search(r"SPN|SP\b|PG", n, re.I), names.index(n)))
+    for sheet in ordered:
+        for _, keys in _header_keys(_first_rows(path, sheet)):
+            if "PGN" in keys and "SPN" in keys:
+                return sheet, keys
+    return None
+
+
+def describe_workbook(path):
+    """Sheet names and their header rows, for error messages."""
+    out = []
+    for sheet in _sheet_names(path):
+        header = next(_header_keys(_first_rows(path, sheet)), (None, []))[1]
+        out.append(f"'{sheet}': " + ", ".join(k for k in header if k)[:160])
+    return out
+
+
+def normalize_digital_annex(path, out_dir, log=None):
+    """Return a workbook pretty_j1939 can read: the file itself when it already uses a
+    current layout, else a converted copy in out_dir (older releases such as cs1939_012012.xls
+    name the sheet 'SPN & PGN' and the columns 'pos', 'Name', 'Description', 'PGN Length')."""
+    found = find_spn_sheet(path)
+    if found is None:
+        raise ValueError(f"{os.path.basename(path)}: no sheet with PGN and SPN columns was found. Sheets: "
+                         + "; ".join(describe_workbook(path)))
+    sheet, keys = found
+    renames = {k: HEADER_SYNONYMS[k] for k in keys if k in HEADER_SYNONYMS}
+    # Names pretty_j1939 already understands need no conversion.
+    known = {"SPN_POSITION_IN_PGN", "SP_POSITION_IN_PG", "SPN_NAME", "SP_LABEL"}
+    if sheet in SPN_SHEET_NAMES and (known & set(keys)):
+        return path
+    import openpyxl
+    out = os.path.join(out_dir, os.path.splitext(os.path.basename(path))[0] + ".normalized.xlsx")
+    from pretty_j1939.create_j1939db_json import J1939daConverter, SheetWrapper
+    # Each row is dry-run through pretty_j1939's own row parsers. Free text it cannot parse in
+    # older releases (resolution "Request Dependent", data range "Manufacturer Determined", ...)
+    # is replaced so the row decodes as a raw value instead of stopping the whole conversion.
+    probe = J1939daConverter.__new__(J1939daConverter)
+    cleaner = SheetWrapper.__new__(SheetWrapper)
+    fixes = [("resolution", "resolution", lambda v: f"Not defined: {v}"),
+             ("operational range", "data_range", lambda v: ""),
+             ("hilo", "data_range", lambda v: ""),
+             ("offset", "offset", lambda v: ""),
+             ("length", "spn_length", lambda v: "Variable"),
+             ("unit", "units", lambda v: "")]
+    wb = openpyxl.Workbook(write_only=True)
+    ws = wb.create_sheet(SPN_SHEET_NAMES[0])
+    cols, replaced = None, {}
+    for row in _sheet_rows(path, sheet):
+        row = list(row)
+        if cols is None:
+            row_keys = [_header_key(c) for c in row]
+            if "PGN" in row_keys and "SPN" in row_keys:
+                row = [renames.get(k, c) if k else c for k, c in zip(row_keys, row)]
+                cols = probe._get_column_indices([str(c).upper().replace(" ", "_") if c is not None else "" for c in row])
+        elif cols.get("spn") is not None and len(row) > cols["spn"] and row[cols["spn"]] not in (None, ""):
+            row += [""] * (max(i for i in cols.values() if i is not None) + 1 - len(row))
+            # Older releases sometimes give a base unit in the Units column that disagrees with the
+            # scaling (SPN 245: Units "m", resolution "0.125 km/bit"); the resolution's unit is right.
+            if cols.get("resolution") is not None:
+                # "10^-7 deg/bit": pretty_j1939 evaluates '^' as XOR (10^-7 = 3); write the number out.
+                power = re.match(r"^\s*10\s*\^\s*(-?\d+)\s*(.*)$", str(row[cols["resolution"]] or ""))
+                if power:
+                    value = f"{10.0 ** int(power.group(1)):.15f}".rstrip("0").rstrip(".")
+                    row[cols["resolution"]] = f"{value} {power.group(2)}"
+                    replaced["power-of-ten resolution"] = replaced.get("power-of-ten resolution", 0) + 1
+            if cols.get("resolution") is not None and cols.get("units") is not None:
+                m = _RESOLUTION_UNIT.match(str(row[cols["resolution"]] or ""))
+                if m and m.group(1).strip() and str(row[cols["units"]]).strip() != m.group(1).strip():
+                    row[cols["units"]] = m.group(1).strip()
+                    replaced["units from resolution"] = replaced.get("units from resolution", 0) + 1
+            for _ in range(len(fixes) + 1):
+                cleaned = [cleaner._clean_value(c) for c in row]
+                try:
+                    probe._process_spn(cleaned, cols, "probe", {})
+                    if cleaned[cols["pgn"]] not in (None, ""):
+                        probe._process_pgn(cleaned, cols, cleaned[cols["pgn"]], {})
+                    break
+                except Exception as e:
+                    message = str(e).lower()
+                    fix = next((f for f in fixes if f[0] in message and cols.get(f[1]) is not None
+                                and row[cols[f[1]]] not in ("", "Variable") and not str(row[cols[f[1]]]).startswith("Not defined")),
+                               None)
+                    if fix is None:          # unrecognized: keep the row as a raw, undefined value
+                        fix = ("other", "resolution", lambda v: f"Not defined: {v}")
+                        if str(row[cols["resolution"]]).startswith("Not defined"):
+                            row[cols["data_range"]] = ""
+                    _, field, fallback = fix
+                    row[cols[field]] = fallback(row[cols[field]])
+                    replaced[field] = replaced.get(field, 0) + 1
+        ws.append([None if c == "" else c for c in row])
+    copied = []
+    for name in _sheet_names(path):
+        if name == sheet:
+            continue
+        header = set(next(_header_keys(_first_rows(path, name)), (None, []))[1])
+        target = next((t for pattern, needed, t in OTHER_SHEETS
+                       if re.search(pattern, name, re.I) and (needed is None or any(needed in k for k in header))), None)
+        if target is None:
+            m = re.match(r"^IG\s*(\d) Source Addresses", name, re.I)
+            target = f"IG{m.group(1)} Source Addresses (B{int(m.group(1)) + 2})" if m else None
+        if target is None or target in copied:
+            continue
+        other = wb.create_sheet(target)
+        for row in _sheet_rows(path, name):
+            other.append([None if c == "" else c for c in row])
+        copied.append(target)
+    wb.save(out)
+    if log:
+        log(f"{os.path.basename(path)}: older Digital Annex layout (sheet '{sheet}'); converted columns "
+            + (", ".join(f"{k} -> {v}" for k, v in renames.items()) or "none")
+            + (f"; tables: {', '.join(copied)}" if copied else ""))
+        if replaced:
+            log("Adjusted for the older layout: " + ", ".join(f"{n.replace('_', ' ')} {c} rows" for n, c in replaced.items())
+                + " (unit taken from the resolution text; values pretty_j1939 cannot parse cleared, so"
+                  " those SPNs decode as raw values)")
+    return out
+
+
 def convert_digital_annex(da_paths, log=None):
     """Run pretty_j1939's converter and return the raw database dict."""
     try:
@@ -306,19 +500,50 @@ def add_pgn_priorities(db, da_paths):
     count = 0
     for path in da_paths:
         try:
-            names = _sheet_names(path)
+            found = find_spn_sheet(path)
         except Exception:
             continue
-        sheet = next((n for n in ("SPs & PGs", "SPNs & PGNs") if n in names), None)
-        if not sheet:
+        if not found:
             continue
-        for r in _table(path, sheet, "DEFAULT_PRIORITY"):
+        for r in _table(path, found[0], "DEFAULT_PRIORITY"):
             pgn, prio = _num(r.get("PGN")), _num(r.get("DEFAULT_PRIORITY"))
             entry = db.get("J1939PGNdb", {}).get(str(int(pgn))) if pgn is not None else None
             if entry is not None and prio is not None and "DefaultPriority" not in entry:
                 entry["DefaultPriority"] = int(prio)
                 count += 1
     return count
+
+
+def add_ig_source_addresses(db, da_paths):
+    """Industry-group preferred source addresses (sheets 'IG1 Source Addresses (B3)' ...
+    'IG5 ...') as db['J1939SATabledbByIG'][ig][sa]. Addresses 128-247 mean different
+    devices in each industry group; rows like '128 | thru 155 are reserved ...' cover a range.
+    """
+    by_ig = db.setdefault("J1939SATabledbByIG", {})
+    for path in da_paths:
+        try:
+            names = _sheet_names(path)
+        except Exception:
+            continue
+        for sheet in names:
+            m = re.match(r"^IG(\d) Source Addresses", sheet)
+            if not m:
+                continue
+            table = by_ig.setdefault(m.group(1), {})
+            for r in _table(path, sheet, "SOURCE_ADDRESS_ID"):
+                sa = _num(r.get("SOURCE_ADDRESS_ID"))
+                name = str(r.get("NAME") or r.get("FUNCTION") or "").replace("_x000D_", " ").strip()
+                if sa is None or not name:
+                    continue
+                first = last = int(sa)
+                span = re.match(r"^thru (\d+)\s*(?:are\s+)?(.*)$", name, re.I)
+                if span:
+                    last = int(span.group(1))
+                    name = span.group(2).strip() or "Reserved"
+                    name = name[:1].upper() + name[1:]
+                for address in range(first, min(last, 255) + 1):
+                    table.setdefault(str(address), name)
+    return sum(len(t) for t in by_ig.values())
 
 
 def to_us_customary(metric_db, table):
@@ -351,13 +576,17 @@ def generate(da_paths, out_dir, systems=(METRIC, US), units_path=UNITS_FILE, log
     """Build licensed databases from Digital Annex files. Returns {system: path}."""
     table = UnitTable(units_path)
     log(f"Reading {len(da_paths)} Digital Annex file(s)...")
-    raw = convert_digital_annex(da_paths, log=log)
-    if not raw.get("J1939PGNdb") or not raw.get("J1939SPNdb"):
-        raise ValueError("No PGN/SPN data found. Is this a J1939 Digital Annex workbook "
-                         "(sheet 'SPs & PGs' or 'SPNs & PGNs')?")
-    metric = add_legacy_fields(raw, table)
-    corrections = apply_value_only_scaling(metric, da_paths, log)
-    add_pgn_priorities(metric, da_paths)
+    with tempfile.TemporaryDirectory() as tmp:
+        # Older releases (e.g. 2012 '.xls' with sheet 'SPN & PGN') are converted to the current layout.
+        sources = [normalize_digital_annex(p, tmp, log) for p in da_paths]
+        raw = convert_digital_annex(sources, log=log)
+        if not raw.get("J1939PGNdb") or not raw.get("J1939SPNdb"):
+            raise ValueError("No PGN/SPN data found. Sheets: "
+                             + " | ".join(s for p in da_paths for s in describe_workbook(p)))
+        metric = add_legacy_fields(raw, table)
+        corrections = apply_value_only_scaling(metric, sources, log)
+        add_pgn_priorities(metric, sources)
+        add_ig_source_addresses(metric, sources)
     try:
         from importlib.metadata import version
         generator = f"pretty_j1939 {version('pretty_j1939')}"
@@ -722,8 +951,9 @@ def read_slots(da_paths):
     slots, spn_slot, spn_row = {}, {}, {}
     for path in da_paths:
         names = _sheet_names(path)
-        if "SLOTs" in names:
-            for r in _table(path, "SLOTs", "SLOT_IDENTIFIER"):
+        slot_sheet = next((n for n in names if re.match(r"^slots?$", n.strip(), re.I)), None)
+        if slot_sheet:
+            for r in _table(path, slot_sheet, "SLOT_IDENTIFIER"):
                 sid = r.get("SLOT_IDENTIFIER")
                 if sid in (None, ""):
                     continue
@@ -736,7 +966,8 @@ def read_slots(da_paths):
                     "len_min": _num(r.get("LENGTH_MINIMUM_(BITS)")),
                     "len_max": _num(r.get("LENGTH_MAXIMUM_(BITS)")),
                 }
-        sheet = next((n for n in ("SPs & PGs", "SPNs & PGNs") if n in names), None)
+        found = find_spn_sheet(path)
+        sheet = found[0] if found else None
         if sheet:
             for r in _table(path, sheet, "SLOT_IDENTIFIER"):
                 spn, sid = r.get("SPN"), r.get("SLOT_IDENTIFIER")

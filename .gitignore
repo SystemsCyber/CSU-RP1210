@@ -145,8 +145,12 @@ data-packs/private/
 # Per-user CSU-RP1210 settings (J1939 unit preference)
 csu_settings.json
 J1939DA JUN2024.xlsx
-# Licensed SAE J1939 Digital Annex workbooks (any release)
+# Licensed SAE J1939 Digital Annex workbooks (any release or file name, e.g. cs1939_012012.xls).
+# No spreadsheet belongs in this repository; test workbooks are generated at test time.
 J1939DA*.xls*
+*.xls
+*.xlsx
+*.xlsm
 
 # RP1210 bridge build output (rebuild with rp1210_bridge\build.bat)
 rp1210_bridge/bin/

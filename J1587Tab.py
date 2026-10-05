@@ -92,10 +92,10 @@ class J1587Tab(QWidget):
         self.J1587_id_table = QTableWidget()
         J1587_id_box = QGroupBox("J1587 Messages")
         #self.tabs.addTab(J1587_id_box,"J1587 Data")
-        self.add_message_button = QCheckBox("Dynamically Update Table")
+        self.add_message_button = QCheckBox("Dynamically &Update Table")
         self.add_message_button.setChecked(True)
 
-        clear_button = QPushButton("Clear J1587 Table")
+        clear_button = QPushButton("C&lear J1587 Table")
         clear_button.clicked.connect(self.clear_J1587_table)
         
         #Create a layout for that box 

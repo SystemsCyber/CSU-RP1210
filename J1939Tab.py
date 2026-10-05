@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import (QMainWindow,
                              QCheckBox,
                              QLineEdit,
                              QVBoxLayout,
+                             QHBoxLayout,
                              QApplication,
                              QPushButton,
                              QTableWidget,
@@ -42,6 +43,14 @@ from collections import OrderedDict
 from RP1210Functions import *
 from TableModel.TableModel import *
 from ISO15765 import *
+import j1939_mux
+import j1939_name
+import j1939db_tools
+from RP1210 import get_storage_path
+
+# Industry groups (J1939-81) when the database does not list them (skeleton).
+INDUSTRY_GROUPS = {0: "Global", 1: "On-Highway Equipment", 2: "Agricultural and Forestry Equipment",
+                   3: "Construction Equipment", 4: "Marine", 5: "Industrial-Process Control-Stationary"}
 
 import logging
 logger = logging.getLogger(__name__)
@@ -141,36 +150,76 @@ class J1939Tab(QWidget):
         tab_layout = QVBoxLayout()
         j1939_id_box = QGroupBox("J1939 Parameter Group Numbers")
         
-        self.add_message_button = QCheckBox("Dynamically Update Table")
+        self.add_message_button = QCheckBox("Dynamically &Update Table")
         self.add_message_button.setChecked(True)
 
-        self.stop_broadcast_button = QCheckBox("Stop J1939 Broadcast")
+        # Multiplexed PGNs (TP.CM, ISO 11783 VT, ISO 15765, proprietary, ...) carry different
+        # messages selected by their first byte(s); split them into one row per selector value.
+        self.multiplexers = j1939_mux.default()
+        self.mux_rows = {}
+        self.expand_mux_button = QCheckBox("E&xpand Multiplexed PGNs")
+        self.expand_mux_button.setChecked(False)
+        self.expand_mux_button.setToolTip(
+            "Show one row per message of a multiplexed PGN, selected by its first byte(s):\n"
+            "TP.CM/ETP.CM control byte, Acknowledgment, Request (requested PGN), ISO 15765 frame and UDS service,\n"
+            "ISO 11783 virtual terminal function, process data, Proprietary A/A2/B.\n"
+            "Normal broadcast PGNs are not split. Definitions: j1939_mux.json. Changing this clears the PGN table.")
+        self.expand_mux_button.toggled.connect(self.clear_pgn_rows)
+
+        # Source addresses 128-247 mean different devices in each industry group. An Address
+        # Claimed (PGN 60928) NAME from a device overrides this interpretation for its address.
+        self.address_claims = {}
+        try:
+            self.industry_group = int(j1939db_tools.read_setting("j1939_industry_group", 1, get_storage_path()))
+        except (TypeError, ValueError):
+            self.industry_group = j1939_name.ON_HIGHWAY
+        self.industry_group_box = QComboBox()
+        groups = {int(k): v for k, v in self.root.j1939db.get("J1939IndustryGroupdb", {}).items() if str(k).isdigit()}
+        for ig in range(6):
+            self.industry_group_box.addItem("{} {}".format(ig, groups.get(ig) or INDUSTRY_GROUPS[ig]), ig)
+        self.industry_group_box.setCurrentIndex(self.industry_group_box.findData(self.industry_group))
+        self.industry_group_box.setToolTip("Industry group used to name source addresses 128-247.\n"
+                                           "A device's Address Claimed NAME overrides it for that address.")
+        self.industry_group_box.currentIndexChanged.connect(self.set_industry_group)
+
+        self.stop_broadcast_button = QCheckBox("Stop J1939 &Broadcast")
         self.stop_broadcast_button.setChecked(False)
 
-        clear_button = QPushButton("Clear J1939 PGN Table")
+        clear_button = QPushButton("C&lear J1939 PGN Table")
         clear_button.clicked.connect(self.clear_j1939_table)
-        
+
         #Set up the Table Model/View/Proxy
         self.j1939_id_table = QTableView()
         self.pgn_data_model = J1939TableModel()
         self.pgn_table_proxy = Proxy()
         self.pgn_data_model.setDataDict(self.j1939_unique_ids)
-        self.j1939_id_table_columns = ["PGN","Acronym","Parameter Group Label","SA","Source","Message Count","Period (ms)","Raw Hexadecimal"]
-        self.pgn_resizable_rows = [0,1,2,3,4]
+        # Source address first (sortable), then the PGN; the Multiplexer column is filled
+        # when multiplexed PGNs are expanded.
+        self.j1939_id_table_columns = ["SA","Source","PGN","Acronym","Parameter Group Label","Multiplexer",
+                                       "Message Count","Period (ms)","Raw Hexadecimal"]
+        self.pgn_resizable_rows = [0,1,2,3,4,5]
         self.pgn_data_model.setDataHeader(self.j1939_id_table_columns)
         self.pgn_table_proxy.setSourceModel(self.pgn_data_model)
         self.j1939_id_table.setModel(self.pgn_table_proxy)
         self.j1939_id_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.j1939_id_table.setSortingEnabled(True)
+        self.j1939_id_table.sortByColumn(0, Qt.AscendingOrder)
         self.j1939_id_table.setWordWrap(False)
-        
+
         #Create a layout for that box using a grid
         j1939_id_box_layout = QGridLayout()
         #Add the widgets into the layout
+        industry_group_row = QHBoxLayout()
+        industry_group_label = QLabel("Industry &group:")
+        industry_group_label.setBuddy(self.industry_group_box)
+        industry_group_row.addWidget(industry_group_label)
+        industry_group_row.addWidget(self.industry_group_box)
         j1939_id_box_layout.addWidget(self.j1939_id_table,0,0,1,5)
         j1939_id_box_layout.addWidget(self.add_message_button,1,0,1,1)
-        j1939_id_box_layout.addWidget(self.stop_broadcast_button,1,1,1,1)
-        j1939_id_box_layout.addWidget(clear_button,1,2,1,1)
+        j1939_id_box_layout.addWidget(self.expand_mux_button,1,1,1,1)
+        j1939_id_box_layout.addLayout(industry_group_row,1,2,1,1)
+        j1939_id_box_layout.addWidget(self.stop_broadcast_button,1,3,1,1)
+        j1939_id_box_layout.addWidget(clear_button,1,4,1,1)
        
         #setup the layout to be displayed in the box
         j1939_id_box.setLayout(j1939_id_box_layout)
@@ -248,7 +297,7 @@ class J1939Tab(QWidget):
         self.dm02_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.dm02_table.setSortingEnabled(True)
 
-        self.dm02_request_button = QPushButton("Request Previously Active DTCs (DM2)")
+        self.dm02_request_button = QPushButton("Request Previously Active DTCs (DM&2)")
         self.dm02_request_button.setToolTip("Send a J1939 Request Message for the DM02 message (PGN 65227).")
         self.dm02_request_button.clicked.connect(self.request_dm02)
 
@@ -273,7 +322,7 @@ class J1939Tab(QWidget):
         self.dm04_table.setModel(self.dm04_table_proxy)
         self.dm04_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.dm04_table.setSortingEnabled(True)
-        self.dm04_request_button = QPushButton("Request Freeze Frame Parameters")
+        self.dm04_request_button = QPushButton("Request Freeze Frame Parameters (DM&4)")
         self.dm04_request_button.setToolTip("Send a J1939 Request Message for the DM04 message (PGN 65229).")
         self.dm04_request_button.clicked.connect(self.request_dm04)
 
@@ -390,13 +439,19 @@ class J1939Tab(QWidget):
                     self.spn_table.resizeColumnToContents(r)
         #self.spn_table.scrollToBottom()
 
-    def clear_j1939_table(self):
-
+    def clear_pgn_rows(self, *args):
+        """Empty the PGN table only (e.g. when the multiplexed-PGN view changes)."""
         self.pgn_data_model.beginResetModel()
         self.j1939_unique_ids = OrderedDict()
+        self.pgn_rows = []
+        self.mux_rows = {}
         self.pgn_data_model.setDataDict(self.j1939_unique_ids)
         self.pgn_data_model.endResetModel()
-        
+
+    def clear_j1939_table(self):
+
+        self.clear_pgn_rows()
+
         self.spn_data_model.beginResetModel()
         self.unique_spns = OrderedDict()
         self.spn_data_model.setDataDict(self.unique_spns)
@@ -436,12 +491,11 @@ class J1939Tab(QWidget):
             logger.debug(traceback.format_exc())
             return
 
-        if pgn == 0xDA00: #ISO
+        if pgn == 0xDA00: #ISO 15765: decoded in the UDS table, and listed in the PGN table below
             self.iso_queue.put((pgn, pri, sa, da, rx_buffer[11:]))
             self.iso_recorder.read_message(True)
             self.root.data_package["UDS Messages"].update(self.iso_recorder.uds_messages)
-            return
-        
+
         if rx_buffer[4] == 1: #Echo message
             # Return when the VDA is the one that sent the message. 
             # The message gets logged, but not displayed in the table
@@ -452,7 +506,20 @@ class J1939Tab(QWidget):
             return
 
         pgn_key = repr((pgn,sa))
-        source_key = "{} on J1939".format(self.get_sa_name(sa))
+        multiplexer = ""
+        if self.expand_mux_button.isChecked():
+            mux = self.multiplexers.selector(pgn, rx_buffer[11:], self.j1939db)
+            if mux is not None:
+                selector_key, multiplexer = mux
+                # A first byte that is really a signal would make a row per value: cap the rows.
+                seen = self.mux_rows.setdefault((pgn, sa), set())
+                if selector_key not in seen and len(seen) >= self.multiplexers.max_rows:
+                    selector_key, multiplexer = "other", "other (more than {} values)".format(self.multiplexers.max_rows)
+                seen.add(selector_key)
+                pgn_key = repr((pgn, sa, selector_key))
+        if pgn == j1939_name.ADDRESS_CLAIMED:
+            self.address_claimed(sa, rx_buffer[11:19])
+        source_key = self.source_key(sa)
         if sa not in self.battery_potential.keys():
             self.battery_potential[sa] = []
             logger.debug("Set battery potential for SA {} to an empty list.".format(sa))
@@ -497,16 +564,14 @@ class J1939Tab(QWidget):
                 self.j1939_unique_ids[pgn_key]["Parameter Group Label"] = self.j1939db["J1939PGNdb"]["{}".format(pgn)]["Name"]
             except KeyError:
                 self.j1939_unique_ids[pgn_key]["Parameter Group Label"] = "Not Provided"
-            try:
-                self.j1939_unique_ids[pgn_key]["Source"] = self.j1939db["J1939SATabledb"]["{}".format(sa)]
-            except KeyError:
-                self.j1939_unique_ids[pgn_key]["Source"] = "Reserved"
+            self.j1939_unique_ids[pgn_key]["Source"] = self.get_sa_name(sa)
             self.look_up_spns(pgn, sa, data_bytes)
 
         self.j1939_unique_ids[pgn_key]["Message Count"] = "{:12d}".format(self.j1939_unique_ids[pgn_key]["Num"])
         self.j1939_unique_ids[pgn_key]["VDATime"] = vda_time
         self.j1939_unique_ids[pgn_key]["PGN"] = "{:6d}".format(pgn)
         self.j1939_unique_ids[pgn_key]["SA"] = "{:3d}".format(sa)
+        self.j1939_unique_ids[pgn_key]["Multiplexer"] = multiplexer
         self.j1939_unique_ids[pgn_key]["Bytes"] = data_bytes
         self.j1939_unique_ids[pgn_key]["Raw Hexadecimal"] = bytes_to_hex_string(data_bytes)
         self.j1939_unique_ids[pgn_key]["Period (ms)"] = "{:10.2f}".format(1000 * (current_time - self.j1939_unique_ids[pgn_key]["Start Time"])/self.j1939_unique_ids[pgn_key]["Num"])
@@ -521,6 +586,10 @@ class J1939Tab(QWidget):
             self.j1939_id_table.scrollToBottom()
             for r in self.pgn_resizable_rows:
                 self.j1939_id_table.resizeColumnToContents(r)
+                # Long Digital Annex names (e.g. self-configurable source addresses) would push
+                # the counts off screen; the full text is in the tooltip.
+                if self.j1939_id_table.columnWidth(r) > 300:
+                    self.j1939_id_table.setColumnWidth(r, 300)
 
             QCoreApplication.processEvents()
 
@@ -612,8 +681,11 @@ class J1939Tab(QWidget):
                         # The value is not out of range
                         val = float(self.unique_spns[repr((917,sa))]["Value"])
                         units = self.unique_spns[repr((917,sa))]["Units"]
-                        if "METER" in units.upper():
-                            val = val * 0.000621371192 
+                        if "METER" in units.upper() or units.strip().lower() == "m":
+                            val = val * 0.000621371192
+                            units = "miles"
+                        elif units.strip().lower() == "ft":     # US customary database
+                            val = val / 5280
                             units = "miles"
                         self.root.data_package["Distance Information"][source_key].update({"High Resolution Total Vehicle Distance":"{:0.4f} {}".format(val,units)})
             
@@ -695,10 +767,7 @@ class J1939Tab(QWidget):
             dm_dict["Suspect Parameter Number Label"] = self.j1939db["J1939SPNdb"]["{}".format(SPN)]["Name"]
         except KeyError:
             dm_dict["Suspect Parameter Number Label"] = "Unknown Suspect Parameter Number"
-        try:
-            dm_dict["Source"] = self.j1939db["J1939SATabledb"]["{}".format(sa)]
-        except KeyError:
-            dm_dict["Source"] = "Unknown Source"
+        dm_dict["Source"] = self.get_sa_name(sa)
 
         fmi_entry = self.j1939db["J1939FMITabledb"].get("{}".format(FMI), {})
         dm_dict["FMI Meaning"] = fmi_entry.get("Name", "Unknown FMI")
@@ -887,10 +956,48 @@ class J1939Tab(QWidget):
             #logger.debug(self.unique_spns[spn_key])
         return True
     def get_sa_name(self, sa):
+        """Name of a source address: its Address Claimed NAME if it sent one, else the
+        preferred-address table of the selected industry group."""
+        return j1939_name.source_name(self.j1939db, sa, self.industry_group, self.address_claims.get(sa))
+
+    def source_key(self, sa):
+        """Stable key for the data package (not changed by a later address claim)."""
+        return "{} on J1939".format(j1939_name.preferred_name(self.j1939db, sa, self.industry_group))
+
+    def set_industry_group(self, *args):
+        self.industry_group = self.industry_group_box.currentData()
         try:
-            return self.j1939db["J1939SATabledb"]["{}".format(sa)]
-        except KeyError:
-            return "Unknown"
+            j1939db_tools.write_setting("j1939_industry_group", self.industry_group, get_storage_path())
+        except OSError:
+            logger.warning(traceback.format_exc())
+        self.refresh_sources()
+
+    def address_claimed(self, sa, data_bytes):
+        """Record an Address Claimed (PGN 60928) NAME; it overrides the meaning of the address."""
+        name = j1939_name.decode(data_bytes)
+        if name is None:
+            return
+        if self.address_claims.get(sa, {}).get("raw") == name["raw"]:
+            return
+        self.address_claims[sa] = name
+        claim = {"Source Address": sa, "Claimed As": j1939_name.claimed_name(name, self.j1939db)}
+        claim.update(j1939_name.describe(name, self.j1939db))
+        self.root.data_package.setdefault("Address Claims", {})["{:3d}".format(sa)] = claim
+        logger.info("Address claim from SA {}: {}".format(sa, claim["Claimed As"]))
+        self.refresh_sources()
+
+    def refresh_sources(self):
+        """Rename the Source column of every table after a claim or an industry group change."""
+        for model, rows in ((self.pgn_data_model, self.j1939_unique_ids), (self.spn_data_model, self.unique_spns),
+                            (self.dm01_data_model, self.active_trouble_codes),
+                            (self.dm02_data_model, self.previous_trouble_codes)):
+            model.aboutToUpdate()
+            for row in rows.values():
+                try:
+                    row["Source"] = self.get_sa_name(int(row["SA"]))
+                except (KeyError, ValueError, TypeError):
+                    continue
+            model.signalUpdate()
 
     def get_j1939_bits_decoded(self, spn, value):
         try:

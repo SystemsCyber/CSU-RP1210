@@ -37,10 +37,11 @@ class J1939TableModel(QAbstractTableModel):
             return QVariant()
 
     def data(self, index, role=Qt.DisplayRole):
-        if index.isValid() and role == Qt.DisplayRole:
+        if index.isValid() and role in (Qt.DisplayRole, Qt.ToolTipRole):
             key = self.table_rows[index.row()]
             col_name = self.header[index.column()]
-            return str(self.data_dict[key][col_name])
+            # .get: rows saved before a column was added (e.g. Multiplexer) show it empty
+            return str(self.data_dict[key].get(col_name, ""))
         else:
             return QVariant()
     

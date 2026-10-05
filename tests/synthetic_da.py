@@ -64,6 +64,42 @@ SA_ROWS = [(0, "Example Engine Controller"), (249, "Example Service Tool")]
 MFR_ROWS = [(683, "Example Manufacturer Inc.")]
 
 
+LEGACY_HEADER = ["PGN", "Parameter Group Label", "PGN Length", "Transmission Rate", "Acronym", "pos",
+                 "SPN length", "SPN", "Name", "Description", "Data Range", "Operational Range", "Resolution",
+                 "Offset", "Units"]
+# The 2012-era layout (sheet 'SPN & PGN', lengths in bits) with the quirks older releases have.
+LEGACY_ROWS = [
+    (65280, "Example Proprietary B 1", "8", "100 ms", "EXPB1", "1-2", 16.0, 520192, "Example Shaft Speed",
+     "Example speed.", "0 to 8,031.875 rpm", "", "0.125 rpm/bit", 0.0, "rpm"),
+    (65280, "Example Proprietary B 1", "8", "100 ms", "EXPB1", "3", 8.0, 520193, "Example Fluid Temperature",
+     "Example temperature.", "-40 to 210 deg C", "", "1 deg C/bit", -40.0, "C"),
+    (65280, "Example Proprietary B 1", "8", "100 ms", "EXPB1", "5-8", 32.0, 520197, "Example Distance",
+     "Example distance; the Units column has the base unit.", "0 to 526,385,151.9 km", "", "0.125 km/bit", 0.0, "m"),
+    (65281, "Example Proprietary B 2", "8", "1 s", "EXPB2", "1-4", 32.0, 520201, "Example Latitude",
+     "Example position.", "-210 to 211.1008122 deg", "", "10^-7 deg/bit", -210.0, "deg"),
+    (65281, "Example Proprietary B 2", "8", "1 s", "EXPB2", "5", 8.0, 520202, "Example Request Field",
+     "Free text in the resolution.", "Manufacturer Determined", "", "Request Dependent", 0.0, "Request Dependent"),
+    ("", "", "", "", "", "", 8.0, 520203, "Example SPN without a PGN", "", "0 to 250", "", "1 count/bit", 0.0, "count"),
+]
+
+
+def build_legacy(path):
+    wb = openpyxl.Workbook()
+    doc = wb.active
+    doc.title = "Documentation"
+    doc.append(["", "COMPANION SPREADSHEET (synthetic, no SAE content)"])
+    ws = wb.create_sheet("SPN & PGN")
+    ws.append(LEGACY_HEADER)
+    for row in LEGACY_ROWS:
+        ws.append(list(row))
+    sa = wb.create_sheet("Global Source Addresses")
+    sa.append(["Source Address ID", "Hx", "Name", "Notes"])
+    for addr, name in SA_ROWS:
+        sa.append([addr, f"{addr:X}", name, ""])
+    wb.save(path)
+    return path
+
+
 def build(path):
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -91,6 +127,18 @@ def build(path):
     sa.append(["Source Address ID", "Name", "Notes"])
     for row in SA_ROWS:
         sa.append(list(row) + [""])
+    # Industry-group preferred addresses (128-247 differ per industry group).
+    ig1 = wb.create_sheet("IG1 Source Addresses (B3)")
+    ig1.append(["Preferred Addresses: synthetic industry group 1"])
+    ig1.append([])
+    ig1.append(["Revised", "Source Address ID", "Name", "Notes"])
+    ig1.append(["", 128, "thru 135 are reserved for future assignment", "Used for dynamic address assignment"])
+    ig1.append(["", 200, "Example Trailer Bridge", ""])
+    ig2 = wb.create_sheet("IG2 Source Addresses (B4)")
+    ig2.append(["Preferred Addresses: synthetic industry group 2"])
+    ig2.append([])
+    ig2.append(["Revised", "Source Address ID", "Device Class", "Device Class Instance", "Function", "Description"])
+    ig2.append(["", 200, 0, 0, "Example Implement Server", ""])
     mfr = wb.create_sheet("Manufacturer IDs (B10)")
     mfr.append(["Manufacturer Code", "Manufacturer Name"])
     for row in MFR_ROWS:

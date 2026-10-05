@@ -57,7 +57,8 @@ from PyQt5.QtWidgets import (QMainWindow,
                              QProgressDialog,
                              QTabWidget)
 from PyQt5.QtCore import Qt, QTimer, QAbstractTableModel, QCoreApplication, QSize
-from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QIcon, QKeySequence
+from PyQt5.QtWidgets import QShortcut
 
 import humanize
 
@@ -78,10 +79,12 @@ from J1939Tab import *
 from J1587Tab import *
 from ComponentInfoTab import *
 from DigitalAnnexSelect import DigitalAnnexDialog
+import app_icons
 from J1587DatabaseSelect import J1587DatabaseDialog
 import j1939db_tools
 import j1587db_tools
 import j1939_dbc
+import j1939_name
 import vehicle_spy
 from ISO15765 import *
 
@@ -93,6 +96,27 @@ logger.setLevel(logging.DEBUG)
 # this file, or in the PyInstaller bundle when running as CSU_RP1210.exe.
 # User files (licensed databases, settings, logs) live in get_storage_path().
 module_directory = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+
+
+def status_html(icon_name, text):
+    """Network status label: an icon above a caption."""
+    return "<html><img src='{}' width='40' height='40'><br>{}</html>".format(app_icons.image_path(icon_name), text)
+
+
+def database_directories():
+    """Folders searched for the licensed J1939/J1587 databases, in order: next to the
+    program (the portable folder), the current folder and, for a build at
+    <repository>\\dist\\CSU_RP1210.exe, the repository where they were generated."""
+    folders = [get_storage_path(), os.getcwd()]
+    if getattr(sys, "frozen", False):
+        exe_folder = os.path.dirname(os.path.abspath(sys.executable))
+        if os.path.basename(exe_folder).lower() == "dist":
+            folders.append(os.path.dirname(exe_folder))
+    unique = []
+    for folder in folders:
+        if os.path.normcase(os.path.abspath(folder)) not in [os.path.normcase(os.path.abspath(u)) for u in unique]:
+            unique.append(folder)
+    return unique
 
 if getattr(sys, "frozen", False):
     log_file = logging.FileHandler(os.path.join(get_storage_path(), "CSU_RP1210.log"), mode="w")
@@ -112,41 +136,48 @@ except OSError:
     logger.warning("version.json not found in {}".format(module_directory))
 
 class CSU_RP1210(QMainWindow):
-    def __init__(self):
+    def __init__(self, splash=None):
         super(CSU_RP1210,self).__init__()
-        
+
         self.setWindowTitle("CSU RP1210")
-        
-        progress = QProgressDialog(self)
-        progress.setMinimumWidth(600)
-        progress.setWindowTitle("Starting Application")
-        progress.setMinimumDuration(0)
-        progress.setWindowModality(Qt.WindowModal)
-        progress.setMaximum(10)
-        progress_label = QLabel("Loading the J1939 Database")
-        #load the J1939 Database
-        progress.setLabel(progress_label)
+        self.setWindowIcon(app_icons.icon("app"))
+
+        # Start-up feedback: the splash screen when the program starts it, else a progress dialog.
+        if splash is None:
+            progress = QProgressDialog(self)
+            progress.setMinimumWidth(600)
+            progress.setWindowTitle("Starting Application")
+            progress.setMinimumDuration(0)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setMaximum(10)
+            progress_label = QLabel()
+            progress.setLabel(progress_label)
+
+        def step(text, value):
+            if splash is not None:
+                splash.message(text)
+            else:
+                progress_label.setText(text)
+                progress.setValue(value)
+            QCoreApplication.processEvents()
+
+        step("Loading the J1939 database", 0)
         # The repository ships a skeleton J1939db.json without SAE content.
         # Licensed databases come from Tools > J1939 Database (DigitalAnnexSelect).
         self.j1939db = {}
         self.load_j1939db()
         logger.info("Done Loading J1939db")
-        progress.setValue(1)
-        QCoreApplication.processEvents()
 
         self.rx_queues = {}
         self.tx_queues = {}
-        progress_label.setText("Loading the J1587 Database")
+        step("Loading the J1587 database", 1)
         # Like J1939: a skeleton J1587db.json ships with the program and the
         # licensed database comes from Tools > J1587 Database (the SAE J1587 PDF).
         self.j1587db = {}
         self.load_j1587db()
         logger.info("Done Loading J1587db")
-        progress.setValue(2)
-        QCoreApplication.processEvents()
-        
 
-        progress_label.setText("Initializing System Variables")
+        step("Initializing system variables", 2)
         if sys.platform == "win32":
             os.system("TASKKILL /F /IM DGServer2.exe >nul 2>&1")
             os.system("TASKKILL /F /IM DGServer1.exe >nul 2>&1")
@@ -166,28 +197,25 @@ class CSU_RP1210(QMainWindow):
         self.RP1210 = None
         self.network_connected = {"J1939": False, "J1708": False}
         self.RP1210_toolbar = None
-        progress.setValue(3)
-        QCoreApplication.processEvents()
 
-        progress_label.setText("Setting Up the Graphical Interface")
+        step("Setting up the user interface", 3)
         self.init_ui()
         logger.debug("Done Setting Up User Interface.")
-        progress.setValue(4)
-        QCoreApplication.processEvents()
+        if splash is not None:
+            # The window is up: the RP1210 connection that follows has its own dialogs.
+            splash.finish(self)
+            splash = None
+            step = lambda text, value: QCoreApplication.processEvents()
+        else:
+            step("Setting up the RP1210 interface", 4)
 
-        progress_label.setText("Setting up the RP1210 Interface")
         self.selectRP1210(automatic=True)
         logger.debug("Done selecting RP1210.")
-        progress.setValue(5)
-        QCoreApplication.processEvents()
 
-        progress_label.setText("Initializing a New Document")
+        step("Initializing a new document", 6)
         self.create_new(False)
-        progress.setValue(6)
-        QCoreApplication.processEvents()
 
-
-        progress_label.setText("Starting Loop Timers")
+        step("Starting loop timers", 8)
         connections_timer = QTimer(self)
         connections_timer.timeout.connect(self.check_connections)
         connections_timer.start(1003) #milliseconds
@@ -196,8 +224,7 @@ class CSU_RP1210(QMainWindow):
         read_timer.timeout.connect(self.read_rp1210)
         read_timer.start(self.update_rate) #milliseconds
 
-        progress.setValue(10)
-        QCoreApplication.processEvents()
+        step("Ready", 10)
 
     def init_ui(self):
         # Builds GUI
@@ -211,67 +238,56 @@ class CSU_RP1210(QMainWindow):
 
         # File Menu Items
         file_menu = menubar.addMenu('&File')
-        open_logger2 = QAction(QIcon(os.path.join(module_directory,r'icons/logger2_48px.png')), '&Import CAN Logger 2', self)
-        open_logger2.setShortcut('Ctrl+I')
-        open_logger2.setStatusTip('Open a file from the NMFTA/TU CAN Logger 2')
-        open_logger2.triggered.connect(self.open_open_logger2)
-        file_menu.addAction(open_logger2)
-
-        open_vehicle_spy = QAction(QIcon(os.path.join(module_directory,r'icons/logger2_48px.png')), 'Import &Vehicle Spy Log...', self)
-        open_vehicle_spy.setShortcut('Ctrl+Shift+I')
-        open_vehicle_spy.setStatusTip('Play a neoVI / Vehicle Spy 3 bus traffic file (.csv) through the J1939 and J1587 tabs')
-        open_vehicle_spy.triggered.connect(self.open_vehicle_spy)
-        file_menu.addAction(open_vehicle_spy)
+        open_logger2 = self.make_action("import_logger", '&Import CAN Logger 2...', 'Ctrl+I',
+            'Open a file from the NMFTA/TU CAN Logger 2', self.open_open_logger2)
+        open_vehicle_spy = self.make_action("import_vehicle_spy", 'Import &Vehicle Spy Log...', 'Ctrl+Shift+I',
+            'Play a neoVI / Vehicle Spy 3 bus traffic file (.csv) through the J1939 and J1587 tabs', self.open_vehicle_spy)
+        exit_action = self.make_action("quit", '&Quit', 'Ctrl+Q', 'Exit the program.', self.confirm_quit)
+        for action in (open_logger2, open_vehicle_spy):
+            file_menu.addAction(action)
+        file_menu.addSeparator()
+        file_menu.addAction(exit_action)
 
         # Tools Menu: databases from licensed SAE documents, and conversions.
         tools_menu = menubar.addMenu('&Tools')
-        j1939_database = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Data_Sheet_48px.png')), 'J1939 &Database...', self)
-        j1939_database.setShortcut('Ctrl+D')
-        j1939_database.setStatusTip('Create the J1939 database from a licensed Digital Annex and choose metric or US units.')
-        j1939_database.triggered.connect(self.open_digital_annex_dialog)
+        j1939_database = self.make_action("j1939_database", 'J1939 &Database...', 'Ctrl+D',
+            'Create the J1939 database from a licensed Digital Annex and choose metric or US units.',
+            self.open_digital_annex_dialog)
+        j1587_database = self.make_action("j1587_database", 'J1587 Data&base...', 'Ctrl+J',
+            'Create the J1587 database from the licensed SAE J1587 document (PDF).', self.open_j1587_database_dialog)
+        export_dbc = self.make_action("export_dbc", 'Export J1939 D&BC...', 'Ctrl+E',
+            'Write the loaded J1939 database as a CAN database (.dbc) for SavvyCAN, cantools or CANalyzer.',
+            self.export_j1939_dbc)
+        convert_spy = self.make_action("convert_candump", 'Convert Vehicle Spy Log to &candump...', 'Ctrl+K',
+            'Write the CAN traffic of a Vehicle Spy log as a candump log (csu command line, CSUCAN replay).',
+            self.convert_vehicle_spy)
         tools_menu.addAction(j1939_database)
-
-        j1587_database = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Data_Sheet_48px.png')), 'J1587 Data&base...', self)
-        j1587_database.setShortcut('Ctrl+Shift+D')
-        j1587_database.setStatusTip('Create the J1587 database from the licensed SAE J1587 document (PDF).')
-        j1587_database.triggered.connect(self.open_j1587_database_dialog)
         tools_menu.addAction(j1587_database)
         tools_menu.addSeparator()
-
-        export_dbc = QAction('Export J1939 D&BC...', self)
-        export_dbc.setStatusTip('Write the loaded J1939 database as a CAN database (.dbc) for SavvyCAN, cantools or CANalyzer.')
-        export_dbc.triggered.connect(self.export_j1939_dbc)
         tools_menu.addAction(export_dbc)
-
-        convert_spy = QAction('Convert Vehicle Spy Log to &candump...', self)
-        convert_spy.setStatusTip('Write the CAN traffic of a Vehicle Spy log as a candump log (csu command line, CSUCAN replay).')
-        convert_spy.triggered.connect(self.convert_vehicle_spy)
         tools_menu.addAction(convert_spy)
 
-
-        exit_action = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Close_Window_48px.png')), '&Quit', self)
-        exit_action.setShortcut('Ctrl+Q')
-        exit_action.setStatusTip('Exit the program.')
-        exit_action.triggered.connect(self.confirm_quit)
-        file_menu.addSeparator()
-        file_menu.addAction(exit_action)
-        
-        #build the entries in the dockable tool bar
+        #build the entries in the dockable tool bars
         file_toolbar = self.addToolBar("File")
-        file_toolbar.addAction(exit_action)
-        
+        for action in (open_logger2, open_vehicle_spy, exit_action):
+            file_toolbar.addAction(action)
+        tools_toolbar = self.addToolBar("Tools")
+        for action in (j1939_database, j1587_database, export_dbc, convert_spy):
+            tools_toolbar.addAction(action)
+
         # RP1210 Menu Items
         self.rp1210_menu = menubar.addMenu('&RP1210')
-        
+
         help_menu = menubar.addMenu('&Help')
-        
-        about = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Help_48px.png')), 'A&bout', self)
-        about.setShortcut('F1')
-        about.setStatusTip('Display a dialog box with information about the program.')
-        about.triggered.connect(self.show_about_dialog)
+        shortcuts = self.make_action("shortcuts", '&Keyboard Shortcuts', 'Ctrl+/',
+            'List the keyboard shortcuts of every menu command and tab.', self.show_shortcuts_dialog)
+        about = self.make_action("about", 'A&bout', 'F1',
+            'Display a dialog box with information about the program.', self.show_about_dialog)
+        help_menu.addAction(shortcuts)
         help_menu.addAction(about)
-        
+
         help_toolbar = self.addToolBar("Help")
+        help_toolbar.addAction(shortcuts)
         help_toolbar.addAction(about)
 
         # Setup the network status windows for logging
@@ -311,7 +327,7 @@ class CSU_RP1210(QMainWindow):
             info_box_area_layout[key].addWidget(info_box[key])
             
             #Add some labels and content
-            self.status_icon[key] = QLabel("<html><img src='{}/icons/icons8_Unavailable_48px.png'><br>Network<br>Unavailable</html>".format(module_directory))
+            self.status_icon[key] = QLabel(status_html("network_unavailable", "Network<br>Unavailable"))
             self.status_icon[key].setAlignment(Qt.AlignCenter)
             
             self.previous_count[key] = 0
@@ -348,6 +364,10 @@ class CSU_RP1210(QMainWindow):
         self.Components = ComponentInfoTab(self, self.tabs)
 
         
+        # Ctrl+1 ... Ctrl+9 switch tabs (listed in Help > Keyboard Shortcuts).
+        for i in range(min(9, self.tabs.count())):
+            QShortcut(QKeySequence("Ctrl+{}".format(i + 1)), self, activated=lambda i=i: self.tabs.setCurrentIndex(i))
+
         self.grid_layout.addWidget(info_box_area["J1939"],0,0,1,1)
         self.grid_layout.addWidget(info_box_area["J1708"],1,0,1,1)
         self.grid_layout.addWidget(self.tabs,0,1,4,1)
@@ -364,50 +384,84 @@ class CSU_RP1210(QMainWindow):
         fig.savefig(img, format='PDF',)
         return img
 
+    def make_action(self, icon_name, text, shortcut, tip, slot):
+        """A menu/toolbar command with its icon, keyboard shortcut and tip (the tooltip shows the shortcut)."""
+        action = QAction(app_icons.icon(icon_name), text, self)
+        action.setShortcut(QKeySequence(shortcut))
+        action.setStatusTip(tip)
+        action.setToolTip("{} ({})".format(text.replace("&", "").rstrip("."), QKeySequence(shortcut).toString(QKeySequence.NativeText)))
+        action.triggered.connect(slot)
+        return action
+
     def setup_RP1210_menus(self):
-        connect_rp1210 = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Connected_48px.png')), '&Client Connect', self)
-        connect_rp1210.setShortcut('Ctrl+Shift+C')
-        connect_rp1210.setStatusTip('Connect Vehicle Diagnostic Adapter')
-        connect_rp1210.triggered.connect(self.selectRP1210)
-        self.rp1210_menu.addAction(connect_rp1210)
-
-        rp1210_version = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Versions_48px.png')), '&Driver Version', self)
-        rp1210_version.setShortcut('Ctrl+Shift+V')
-        rp1210_version.setStatusTip('Show Vehicle Diagnostic Adapter Driver Version Information')
-        rp1210_version.triggered.connect(self.display_version)
-        self.rp1210_menu.addAction(rp1210_version)
-
-        rp1210_detailed_version = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_More_Details_48px.png')), 'De&tailed Version', self)
-        rp1210_detailed_version.setShortcut('Ctrl+Shift+T')
-        rp1210_detailed_version.setStatusTip('Show Vehicle Diagnostic Adapter Detailed Version Information')
-        rp1210_detailed_version.triggered.connect(self.display_detailed_version)
-        self.rp1210_menu.addAction(rp1210_detailed_version)
-
-        rp1210_get_hardware_status = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Steam_48px.png')), 'Get &Hardware Status', self)
-        rp1210_get_hardware_status.setShortcut('Ctrl+Shift+H')
-        rp1210_get_hardware_status.setStatusTip('Determine details regarding the hardware interface status and its connections.')
-        rp1210_get_hardware_status.triggered.connect(self.get_hardware_status)
-        self.rp1210_menu.addAction(rp1210_get_hardware_status)
-
-        rp1210_get_hardware_status_ex = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_System_Information_48px.png')), 'Get &Extended Hardware Status', self)
-        rp1210_get_hardware_status_ex.setShortcut('Ctrl+Shift+E')
-        rp1210_get_hardware_status_ex.setStatusTip('Determine the hardware interface status and whether the VDA device is physically connected.')
-        rp1210_get_hardware_status_ex.triggered.connect(self.get_hardware_status_ex)
-        self.rp1210_menu.addAction(rp1210_get_hardware_status_ex)
-
-        disconnect_rp1210 = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Disconnected_48px.png')), 'Client &Disconnect', self)
-        disconnect_rp1210.setShortcut('Ctrl+Shift+D')
-        disconnect_rp1210.setStatusTip('Disconnect all RP1210 Clients')
-        disconnect_rp1210.triggered.connect(self.disconnectRP1210)
-        self.rp1210_menu.addAction(disconnect_rp1210)
-
+        actions = [
+            self.make_action("connect", '&Client Connect...', 'Ctrl+Shift+C',
+                             'Connect Vehicle Diagnostic Adapter', self.selectRP1210),
+            self.make_action("driver_version", '&Driver Version', 'Ctrl+Shift+V',
+                             'Show Vehicle Diagnostic Adapter Driver Version Information', self.display_version),
+            self.make_action("detailed_version", 'De&tailed Version', 'Ctrl+Shift+T',
+                             'Show Vehicle Diagnostic Adapter Detailed Version Information', self.display_detailed_version),
+            self.make_action("hardware_status", 'Get &Hardware Status', 'Ctrl+Shift+H',
+                             'Determine details regarding the hardware interface status and its connections.',
+                             self.get_hardware_status),
+            self.make_action("hardware_status_ex", 'Get &Extended Hardware Status', 'Ctrl+Shift+E',
+                             'Determine the hardware interface status and whether the VDA device is physically connected.',
+                             self.get_hardware_status_ex),
+            self.make_action("disconnect", 'Client Dis&connect', 'Ctrl+Shift+X',
+                             'Disconnect all RP1210 Clients', self.disconnectRP1210),
+        ]
         self.RP1210_toolbar = self.addToolBar("RP1210")
-        self.RP1210_toolbar.addAction(connect_rp1210)
-        self.RP1210_toolbar.addAction(rp1210_version)
-        self.RP1210_toolbar.addAction(rp1210_detailed_version)
-        self.RP1210_toolbar.addAction(rp1210_get_hardware_status)
-        self.RP1210_toolbar.addAction(rp1210_get_hardware_status_ex)
-        self.RP1210_toolbar.addAction(disconnect_rp1210)
+        for action in actions:
+            self.rp1210_menu.addAction(action)
+            self.RP1210_toolbar.addAction(action)
+
+    def show_shortcuts_dialog(self):
+        """Help > Keyboard Shortcuts: every menu command, tab and tab button with its keys."""
+        rows = []
+        for menu_action in self.menuBar().actions():
+            menu = menu_action.menu()
+            for action in menu.actions() if menu else []:
+                if not action.shortcut().isEmpty():
+                    rows.append((menu_action.text().replace("&", ""), action.text().replace("&", "").rstrip("."),
+                                 action.shortcut().toString(QKeySequence.NativeText)))
+        for i in range(min(9, self.tabs.count())):
+            rows.append(("Tabs", self.tabs.tabText(i), "Ctrl+{}".format(i + 1)))
+        rows += [("J1939 PGNs tab", "Dynamically update table", "Alt+U"),
+                 ("J1939 PGNs tab", "Expand multiplexed PGNs", "Alt+X"),
+                 ("J1939 PGNs tab", "Industry group", "Alt+G"),
+                 ("J1939 PGNs tab", "Stop J1939 broadcast", "Alt+B"),
+                 ("J1939 PGNs tab", "Clear J1939 PGN table", "Alt+L"),
+                 ("J1939 Diagnostic Codes tab", "Request previously active DTCs (DM2)", "Alt+2"),
+                 ("J1939 Freeze Frames tab", "Request freeze frame parameters (DM4)", "Alt+4"),
+                 ("J1587 Data tab", "Dynamically update table", "Alt+U"),
+                 ("J1587 Data tab", "Clear J1587 table", "Alt+L"),
+                 ("Component Information tab", "Request VIN", "Alt+V"),
+                 ("Component Information tab", "Request component ID", "Alt+C"),
+                 ("Component Information tab", "Request software ID", "Alt+S"),
+                 ("Component Information tab", "Request ECU distances", "Alt+D"),
+                 ("Component Information tab", "Request ECU hours", "Alt+O"),
+                 ("Component Information tab", "Request address claims", "Alt+A"),
+                 ("Component Information tab", "Refresh data", "F5 or Alt+E")]
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Keyboard Shortcuts")
+        dialog.setWindowIcon(app_icons.icon("shortcuts"))
+        table = QTableWidget(len(rows), 3)
+        table.setHorizontalHeaderLabels(["Where", "Command", "Keys"])
+        for r, row in enumerate(rows):
+            for c, value in enumerate(row):
+                table.setItem(r, c, QTableWidgetItem(value))
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        table.verticalHeader().setDefaultSectionSize(22)
+        table.resizeColumnsToContents()
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout = QVBoxLayout()
+        layout.addWidget(table)
+        layout.addWidget(buttons)
+        dialog.setLayout(layout)
+        dialog.resize(table.horizontalHeader().length() + 60, 560)
+        dialog.exec_()
 
     def create_new(self, new_file=True):
         self.data_package = {"File Format":{"major":CSU_RP1210_version["major"],
@@ -431,6 +485,7 @@ class CSU_RP1210(QMainWindow):
         self.data_package["Distance Information"] = {}
         self.data_package["ECU Time Information"] = {}
         self.data_package["Event Data"] = {}
+        self.data_package["Address Claims"] = {}
         self.data_package["GPS Data"] = {
             "Altitude": 0.0,
             "GPS Time": None,
@@ -444,6 +499,7 @@ class CSU_RP1210(QMainWindow):
                                                  }
         self.request_timeout = 1
 
+        self.J1939.address_claims = {}
         self.J1939.reset_data()
         self.J1939.clear_j1939_table()
         self.J1587.clear_J1587_table()
@@ -481,7 +537,8 @@ class CSU_RP1210(QMainWindow):
               "J1939SPNdb": {} }
         units = j1939db_tools.read_unit_preference(get_storage_path())
         candidates = [os.environ.get("CSU_J1939DB")]
-        candidates += j1939db_tools.database_candidates(get_storage_path(), units)
+        for directory in database_directories():
+            candidates += j1939db_tools.database_candidates(directory, units)[:2]   # licensed files first
         candidates += j1939db_tools.database_candidates(module_directory, units)
         for candidate in filter(None, candidates):
             try:
@@ -498,6 +555,7 @@ class CSU_RP1210(QMainWindow):
                            "a licensed database from the Digital Annex.")
         self.j1939db.clear()
         self.j1939db.update(db)
+        self.update_database_status()
 
     def open_digital_annex_dialog(self):
         dialog = DigitalAnnexDialog(self, storage_dir=get_storage_path())
@@ -518,7 +576,8 @@ class CSU_RP1210(QMainWindow):
         db = {"FMI": {}, "MID": {}, "MIDAlias": {}, "PID": {}, "PIDNames": {}, "SID": {}}
         units = j1939db_tools.read_unit_preference(get_storage_path())
         candidates = [os.environ.get("CSU_J1587DB")]
-        candidates += j1587db_tools.database_candidates(get_storage_path(), units)
+        for directory in database_directories():
+            candidates += j1587db_tools.database_candidates(directory, units)[:2]
         candidates += j1587db_tools.database_candidates(module_directory, units)
         for candidate in filter(None, candidates):
             try:
@@ -533,6 +592,26 @@ class CSU_RP1210(QMainWindow):
                            "a licensed database from the SAE J1587 document.")
         self.j1587db.clear()
         self.j1587db.update(db)
+        self.update_database_status()
+
+    def update_database_status(self):
+        """Permanent status bar note of which J1939/J1587 databases are loaded (red for a skeleton)."""
+        if not hasattr(self, "database_status"):
+            self.database_status = QLabel()
+            self.statusBar().addPermanentWidget(self.database_status)
+        parts, skeleton = [], False
+        for label, db, table in (("J1939", getattr(self, "j1939db", {}), "J1939PGNdb"),
+                                 ("J1587", getattr(self, "j1587db", {}), "PID")):
+            meta = db.get("_meta", {})
+            if not db:
+                continue
+            if meta.get("skeleton") or not db.get(table):
+                skeleton = True
+                parts.append("{} database: skeleton (Tools > {} Database)".format(label, label))
+            else:
+                parts.append("{} database: licensed, {}".format(label, "US" if meta.get("units") == "us" else "metric"))
+        self.database_status.setText("  |  ".join(parts))
+        self.database_status.setStyleSheet("color: #c4320a; font-weight: bold;" if skeleton else "")
 
     def open_j1587_database_dialog(self):
         dialog = J1587DatabaseDialog(self, storage_dir=get_storage_path())
@@ -767,7 +846,17 @@ class CSU_RP1210(QMainWindow):
         self.J1939.uds_data_model.signalUpdate()
         self.J1939.uds_table.resizeRowsToContents()
         for c in self.J1939.uds_resizable_cols:
-            self.J1939.uds_table.resizeColumnToContents(c)       
+            self.J1939.uds_table.resizeColumnToContents(c)
+
+        # Address claims saved in the data package override source address names again.
+        self.J1939.address_claims = {}
+        for claim in self.data_package.setdefault("Address Claims", {}).values():
+            try:
+                raw = int(claim["NAME"], 16)
+                self.J1939.address_claims[int(claim["Source Address"])] = j1939_name.decode(raw.to_bytes(8, "little"))
+            except (KeyError, ValueError, TypeError):
+                continue
+        self.J1939.refresh_sources()
 
     def confirm_quit(self):
         self.close()
@@ -939,21 +1028,21 @@ class CSU_RP1210(QMainWindow):
             try:
                 current_count = self.read_message_threads[key].message_count
                 duration = time.time() - self.read_message_threads[key].start_time
-                self.message_duration_label[key].setText("<html><img src='{}/icons/icons8_Connected_48px.png'><br>Client Connected<br>{:0.0f} sec.</html>".format(module_directory, duration))
+                self.message_duration_label[key].setText(status_html("client_connected", "Client Connected<br>{:0.0f} sec.".format(duration)))
                 network_connection[key] = True
             except (KeyError, AttributeError) as e:
                 current_count = 0
                 duration = 0
-                self.message_duration_label[key].setText("<html><img src='{}/icons/icons8_Disconnected_48px.png'><br>Client Disconnected<br>{:0.0f} sec.</html>".format(module_directory, duration))
+                self.message_duration_label[key].setText(status_html("client_disconnected", "Client Disconnected<br>{:0.0f} sec.".format(duration)))
                 
             count_change = current_count - self.previous_count[key]
             self.previous_count[key] = current_count
             # See if messages come in. Change the 
             if count_change > 0 and not self.network_connected[key]: 
-                self.status_icon[key].setText("<html><img src='{}/icons/icons8_Ok_48px.png'><br>Network<br>Online</html>".format(module_directory))
+                self.status_icon[key].setText(status_html("network_online", "Network<br>Online"))
                 self.network_connected[key] = True
             elif count_change == 0 and self.network_connected[key]:             
-                self.status_icon[key].setText("<html><img src='{}/icons/icons8_Unavailable_48px.png'><br>Network<br>Unavailable</html>".format(module_directory))
+                self.status_icon[key].setText(status_html("network_unavailable", "Network<br>Unavailable"))
                 self.network_connected[key] = False
 
             self.message_count_label[key].setText("Message Count:\n{}".format(humanize.intcomma(current_count)))
@@ -1107,6 +1196,12 @@ class CSU_RP1210(QMainWindow):
         try:
             return self.J1939.j1939_unique_ids[repr((pgn,sa))]["Bytes"]
         except KeyError:
+            # With "Expand Multiplexed PGNs", a multiplexed PGN has one row per selector:
+            # return the most recent of them.
+            rows = [r for r in self.J1939.j1939_unique_ids.values()
+                    if r.get("PGN", "").strip() == str(pgn) and r.get("SA", "").strip() == str(sa)]
+            if rows:
+                return max(rows, key=lambda r: r.get("Message Time", 0))["Bytes"]
             return False
           
 
@@ -1158,12 +1253,20 @@ class CSU_RP1210(QMainWindow):
         
     def show_about_dialog(self):
         logger.debug("show_about_dialog Request")
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Information)
+        msg = QMessageBox(self)
+        msg.setIconPixmap(app_icons.icon("app").pixmap(64, 64))
         msg.setText("About CSU-RP1210")
-        msg.setInformativeText("""Icons by Icons8\nhttps://icons8.com/""")
+        version = "{}.{}.{}".format(CSU_RP1210_version.get("major", 0), CSU_RP1210_version.get("minor", 0),
+                                    CSU_RP1210_version.get("patch", 0))
+        msg.setInformativeText("Version {}\nHeavy vehicle network diagnostics: J1939, J1587, RP1210 and CAN FD.\n\n"
+                               "Help > Keyboard Shortcuts (Ctrl+/) lists every shortcut.".format(version))
         msg.setWindowTitle("About")
-        msg.setDetailedText("There will be some details here.")
+        j1939_meta, j1587_meta = self.j1939db.get("_meta", {}), self.j1587db.get("_meta", {})
+        msg.setDetailedText(
+            "J1939 database: {}\nJ1587 database: {}\n\nThe icons are original artwork of this project "
+            "(icons/, tools/make_icons.py) under its license.".format(
+                "skeleton" if j1939_meta.get("skeleton") else "licensed, {} units".format(j1939_meta.get("units", "?")),
+                "skeleton" if j1587_meta.get("skeleton") else "licensed, {} units".format(j1587_meta.get("units", "?"))))
         msg.setStandardButtons(QMessageBox.Ok)
         msg.setWindowModality(Qt.ApplicationModal)
         msg.exec_()
@@ -1200,5 +1303,10 @@ class CSU_RP1210(QMainWindow):
 if __name__ == '__main__':
 
     app = QApplication(sys.argv)
-    execute = CSU_RP1210()
+    app.setWindowIcon(app_icons.icon("app"))
+    # Immediate feedback while the databases load and the window is built.
+    splash = app_icons.show_splash("{}.{}.{}".format(CSU_RP1210_version.get("major", 0),
+                                                     CSU_RP1210_version.get("minor", 0),
+                                                     CSU_RP1210_version.get("patch", 0)))
+    execute = CSU_RP1210(splash)
     sys.exit(app.exec_())
