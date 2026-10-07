@@ -264,7 +264,10 @@ class RP1210Class():
         try:
             RP1210DLL = windll.LoadLibrary(self.dll_path)
             if self.bridge_target:
-                RP1210DLL.RP1210Bridge_SetTarget(c_char_p(self.bridge_target.encode("ascii")))
+                result = RP1210DLL.RP1210Bridge_SetTarget(c_char_p(self.bridge_target.encode("ascii")))
+                if result != 0:
+                    logger.error("RP1210Bridge_SetTarget failed with return value %d", result)
+                    return False
         except:
             logger.debug(traceback.format_exc())
             logger.info("If the RP1210 DLL fails to load, check that its bitness matches this program "
@@ -467,6 +470,7 @@ class RP1210Class():
         logger.debug(message)
         message_window.setText(message)
         message_window.exec_()
+
 
     def get_hardware_status(self, nClientID=1):
         """
@@ -790,4 +794,3 @@ class RP1210Class():
         logger.debug(message)
         message_window.setText(message)
         message_window.exec_()
-
