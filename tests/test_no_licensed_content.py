@@ -33,7 +33,6 @@ def test_no_workbooks_or_licensed_databases_tracked():
            if f.lower().endswith((".xls", ".xlsx", ".xlsm"))
            or os.path.basename(f).upper().startswith("J1939DA")
            or "licensed" in os.path.basename(f).lower() and f.lower().endswith(".json")]
-    bad = [f for f in bad if not f.startswith("tests/test_")]
     assert not bad, f"licensed files are tracked or staged: {bad}"
 
 
