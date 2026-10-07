@@ -57,7 +57,8 @@ from PyQt5.QtWidgets import (QMainWindow,
                              QProgressDialog,
                              QTabWidget)
 from PyQt5.QtCore import Qt, QTimer, QAbstractTableModel, QCoreApplication, QSize
-from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QIcon, QKeySequence
+from PyQt5.QtWidgets import QShortcut
 
 import humanize
 
@@ -77,120 +78,109 @@ from RP1210Select import *
 from J1939Tab import *
 from J1587Tab import *
 from ComponentInfoTab import *
+from DigitalAnnexSelect import DigitalAnnexDialog
+import app_icons
+from J1587DatabaseSelect import J1587DatabaseDialog
+import j1939db_tools
+import j1587db_tools
+import j1939_dbc
+import j1939_name
+import vehicle_spy
 from ISO15765 import *
-
-if sys.maxsize > 2**32:
-    print("Must run on 32-bit Python.")
-    sys.exit()
 
 import logging
 logger.addHandler(logging.StreamHandler(sys.stdout))
 logger.setLevel(logging.DEBUG)
 
-module_directory = os.getcwd()
+# Bundled resources (icons, version.json, skeleton J1939db.json) live next to
+# this file, or in the PyInstaller bundle when running as CSU_RP1210.exe.
+# User files (licensed databases, settings, logs) live in get_storage_path().
+module_directory = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+
+
+def status_html(icon_name, text):
+    """Network status label: an icon above a caption."""
+    return "<html><img src='{}' width='40' height='40'><br>{}</html>".format(app_icons.image_path(icon_name), text)
+
+
+def database_directories():
+    """Folders searched for the licensed J1939/J1587 databases, in order: next to the
+    program (the portable folder), the current folder and, for a build at
+    <repository>\\dist\\CSU_RP1210.exe, the repository where they were generated."""
+    folders = [get_storage_path(), os.getcwd()]
+    if getattr(sys, "frozen", False):
+        exe_folder = os.path.dirname(os.path.abspath(sys.executable))
+        if os.path.basename(exe_folder).lower() == "dist":
+            folders.append(os.path.dirname(exe_folder))
+    unique = []
+    for folder in folders:
+        if os.path.normcase(os.path.abspath(folder)) not in [os.path.normcase(os.path.abspath(u)) for u in unique]:
+            unique.append(folder)
+    return unique
+
+if getattr(sys, "frozen", False):
+    log_file = logging.FileHandler(os.path.join(get_storage_path(), "CSU_RP1210.log"), mode="w")
+    log_file.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logging.getLogger().addHandler(log_file)
+    logging.getLogger().setLevel(logging.DEBUG)
+
+# RP1210 DLLs must match the process bitness: a 64-bit build loads 64-bit vendor
+# DLLs (e.g. PEAKRP32 from System32); 32-bit-only DLLs need a 32-bit build.
+logger.info("Running {}-bit Python {}".format(64 if sys.maxsize > 2**32 else 32, sys.version.split()[0]))
 
 try:
-    with open('version.json') as f:
+    with open(os.path.join(module_directory, 'version.json')) as f:
         CSU_RP1210_version = json.load(f)
-except:
-    print("This is a module that should be run from another program. See the demo code.")
+except OSError:
+    CSU_RP1210_version = {"major": 0, "minor": 0, "patch": 0}
+    logger.warning("version.json not found in {}".format(module_directory))
 
 class CSU_RP1210(QMainWindow):
-    def __init__(self):
+    def __init__(self, splash=None):
         super(CSU_RP1210,self).__init__()
-        
+
         self.setWindowTitle("CSU RP1210")
-        
-        progress = QProgressDialog(self)
-        progress.setMinimumWidth(600)
-        progress.setWindowTitle("Starting Application")
-        progress.setMinimumDuration(0)
-        progress.setWindowModality(Qt.WindowModal)
-        progress.setMaximum(10)
-        progress_label = QLabel("Loading the J1939 Database")
-        #load the J1939 Database
-        progress.setLabel(progress_label)
-        try:
-            with open("J1939db.json",'r') as j1939_file:
-                self.j1939db = json.load(j1939_file) 
-        except FileNotFoundError:
-            try:
-                with open(os.path.join(module_directory,"J1939db.json"),'r') as j1939_file:
-                    self.j1939db = json.load(j1939_file) 
-            except FileNotFoundError: 
-                # Make a data structure to do something anyways
-                logger.debug("J1939db.json file was not found.")
-                self.j1939db = {"J1939BitDecodings":{},
-                                "J1939FMITabledb": {},
-                            "J1939LampFlashTabledb": {},
-                            "J1939OBDTabledb": {},
-                            "J1939PGNdb": {},
-                            "J1939SAHWTabledb": {},
-                            "J1939SATabledb": {},
-                            "J1939SPNdb": {} }
+        self.setWindowIcon(app_icons.icon("app"))
+
+        # Start-up feedback: the splash screen when the program starts it, else a progress dialog.
+        if splash is None:
+            progress = QProgressDialog(self)
+            progress.setMinimumWidth(600)
+            progress.setWindowTitle("Starting Application")
+            progress.setMinimumDuration(0)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setMaximum(10)
+            progress_label = QLabel()
+            progress.setLabel(progress_label)
+
+        def step(text, value):
+            if splash is not None:
+                splash.message(text)
+            else:
+                progress_label.setText(text)
+                progress.setValue(value)
+            QCoreApplication.processEvents()
+
+        step("Loading the J1939 database", 0)
+        # The repository ships a skeleton J1939db.json without SAE content.
+        # Licensed databases come from Tools > J1939 Database (DigitalAnnexSelect).
+        self.j1939db = {}
+        self.load_j1939db()
         logger.info("Done Loading J1939db")
-        progress.setValue(1)
-        QCoreApplication.processEvents()
 
         self.rx_queues = {}
         self.tx_queues = {}
-        progress_label.setText("Loading the J1587 Database")
-        try:
-            with open(os.path.join(module_directory,"J1587db.json"),'r') as j1587_file:
-                self.j1587db = json.load(j1587_file)
-        except FileNotFoundError:
-            logger.debug("J1587db.json file was not found.")
-            self.j1587db = { "FMI": {},
-                             "MID": {},
-                             "MIDAlias": {},
-                             "PID": {"168":{"BitResolution" : 0.05,
-                                            "Category" : "live",
-                                            "DataForm" : "a a",
-                                            "DataLength" : 2,
-                                            "DataType" : "Unsigned Integer",
-                                            "FormatStr" : "%0.2f",
-                                            "Maximum" : 3276.75,
-                                            "Minimum" : 0.0,
-                                            "Name" : "Battery Potential (Voltage)",
-                                            "Period" : "1",
-                                            "Priority" : 5,
-                                            "Unit" : "volts"},
-                                    "245" : { "BitResolution" : 0.1,
-                                              "Category" : "hist",
-                                              "DataForm" : "n a a a a",
-                                              "DataLength" : 4,
-                                              "DataType" : "Unsigned Long Integer",
-                                              "FormatStr" : "%0.1f",
-                                              "Maximum" : 429496729.5,
-                                              "Minimum" : 0.0,
-                                              "Name" : "Total Vehicle Distance",
-                                              "Period" : "10",
-                                              "Priority" : 7,
-                                              "Unit" : "miles"},
-                                    "247" : {
-                                        "BitResolution" : 0.05,
-                                        "Category" : "hist",
-                                        "DataForm" : "n a a a a",
-                                        "DataLength" : 4,
-                                        "DataType" : "Unsigned Long Integer",
-                                        "FormatStr" : "%0.2f",
-                                        "Maximum" : 214748364.8,
-                                        "Minimum" : 0.0,
-                                        "Name" : "Total Engine Hours",
-                                        "Period" : "On request",
-                                        "Priority" : 8,
-                                        "Unit" : "hours"}
-                                    },
-                             "PIDNames": {},
-                             "SID": {} }
+        step("Loading the J1587 database", 1)
+        # Like J1939: a skeleton J1587db.json ships with the program and the
+        # licensed database comes from Tools > J1587 Database (the SAE J1587 PDF).
+        self.j1587db = {}
+        self.load_j1587db()
         logger.info("Done Loading J1587db")
-        progress.setValue(2)
-        QCoreApplication.processEvents()
-        
 
-        progress_label.setText("Initializing System Variables")
-        os.system("TASKKILL /F /IM DGServer2.exe")
-        os.system("TASKKILL /F /IM DGServer1.exe")  
+        step("Initializing system variables", 2)
+        if sys.platform == "win32":
+            os.system("TASKKILL /F /IM DGServer2.exe >nul 2>&1")
+            os.system("TASKKILL /F /IM DGServer1.exe >nul 2>&1")
         
         self.update_rate = 100
 
@@ -207,28 +197,25 @@ class CSU_RP1210(QMainWindow):
         self.RP1210 = None
         self.network_connected = {"J1939": False, "J1708": False}
         self.RP1210_toolbar = None
-        progress.setValue(3)
-        QCoreApplication.processEvents()
 
-        progress_label.setText("Setting Up the Graphical Interface")
+        step("Setting up the user interface", 3)
         self.init_ui()
         logger.debug("Done Setting Up User Interface.")
-        progress.setValue(4)
-        QCoreApplication.processEvents()
+        if splash is not None:
+            # The window is up: the RP1210 connection that follows has its own dialogs.
+            splash.finish(self)
+            splash = None
+            step = lambda text, value: QCoreApplication.processEvents()
+        else:
+            step("Setting up the RP1210 interface", 4)
 
-        progress_label.setText("Setting up the RP1210 Interface")
         self.selectRP1210(automatic=True)
         logger.debug("Done selecting RP1210.")
-        progress.setValue(5)
-        QCoreApplication.processEvents()
 
-        progress_label.setText("Initializing a New Document")
+        step("Initializing a new document", 6)
         self.create_new(False)
-        progress.setValue(6)
-        QCoreApplication.processEvents()
 
-
-        progress_label.setText("Starting Loop Timers")
+        step("Starting loop timers", 8)
         connections_timer = QTimer(self)
         connections_timer.timeout.connect(self.check_connections)
         connections_timer.start(1003) #milliseconds
@@ -237,8 +224,7 @@ class CSU_RP1210(QMainWindow):
         read_timer.timeout.connect(self.read_rp1210)
         read_timer.start(self.update_rate) #milliseconds
 
-        progress.setValue(10)
-        QCoreApplication.processEvents()
+        step("Ready", 10)
 
     def init_ui(self):
         # Builds GUI
@@ -252,36 +238,56 @@ class CSU_RP1210(QMainWindow):
 
         # File Menu Items
         file_menu = menubar.addMenu('&File')
-        open_logger2 = QAction(QIcon(os.path.join(module_directory,r'icons/logger2_48px.png')), '&Import CAN Logger 2', self)
-        open_logger2.setShortcut('Ctrl+I')
-        open_logger2.setStatusTip('Open a file from the NMFTA/TU CAN Logger 2')
-        open_logger2.triggered.connect(self.open_open_logger2)
-        file_menu.addAction(open_logger2)
-
-
-        exit_action = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Close_Window_48px.png')), '&Quit', self)
-        exit_action.setShortcut('Ctrl+Q')
-        exit_action.setStatusTip('Exit the program.')
-        exit_action.triggered.connect(self.confirm_quit)
+        open_logger2 = self.make_action("import_logger", '&Import CAN Logger 2...', 'Ctrl+I',
+            'Open a file from the NMFTA/TU CAN Logger 2', self.open_open_logger2)
+        open_vehicle_spy = self.make_action("import_vehicle_spy", 'Import &Vehicle Spy Log...', 'Ctrl+Shift+I',
+            'Play a neoVI / Vehicle Spy 3 bus traffic file (.csv) through the J1939 and J1587 tabs', self.open_vehicle_spy)
+        exit_action = self.make_action("quit", '&Quit', 'Ctrl+Q', 'Exit the program.', self.confirm_quit)
+        for action in (open_logger2, open_vehicle_spy):
+            file_menu.addAction(action)
         file_menu.addSeparator()
         file_menu.addAction(exit_action)
-        
-        #build the entries in the dockable tool bar
+
+        # Tools Menu: databases from licensed SAE documents, and conversions.
+        tools_menu = menubar.addMenu('&Tools')
+        j1939_database = self.make_action("j1939_database", 'J1939 &Database...', 'Ctrl+D',
+            'Create the J1939 database from a licensed Digital Annex and choose metric or US units.',
+            self.open_digital_annex_dialog)
+        j1587_database = self.make_action("j1587_database", 'J1587 Data&base...', 'Ctrl+J',
+            'Create the J1587 database from the licensed SAE J1587 document (PDF).', self.open_j1587_database_dialog)
+        export_dbc = self.make_action("export_dbc", 'Export J1939 D&BC...', 'Ctrl+E',
+            'Write the loaded J1939 database as a CAN database (.dbc) for SavvyCAN, cantools or CANalyzer.',
+            self.export_j1939_dbc)
+        convert_spy = self.make_action("convert_candump", 'Convert Vehicle Spy Log to &candump...', 'Ctrl+K',
+            'Write the CAN traffic of a Vehicle Spy log as a candump log (csu command line, CSUCAN replay).',
+            self.convert_vehicle_spy)
+        tools_menu.addAction(j1939_database)
+        tools_menu.addAction(j1587_database)
+        tools_menu.addSeparator()
+        tools_menu.addAction(export_dbc)
+        tools_menu.addAction(convert_spy)
+
+        #build the entries in the dockable tool bars
         file_toolbar = self.addToolBar("File")
-        file_toolbar.addAction(exit_action)
-        
+        for action in (open_logger2, open_vehicle_spy, exit_action):
+            file_toolbar.addAction(action)
+        tools_toolbar = self.addToolBar("Tools")
+        for action in (j1939_database, j1587_database, export_dbc, convert_spy):
+            tools_toolbar.addAction(action)
+
         # RP1210 Menu Items
         self.rp1210_menu = menubar.addMenu('&RP1210')
-        
+
         help_menu = menubar.addMenu('&Help')
-        
-        about = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Help_48px.png')), 'A&bout', self)
-        about.setShortcut('F1')
-        about.setStatusTip('Display a dialog box with information about the program.')
-        about.triggered.connect(self.show_about_dialog)
+        shortcuts = self.make_action("shortcuts", '&Keyboard Shortcuts', 'Ctrl+/',
+            'List the keyboard shortcuts of every menu command and tab.', self.show_shortcuts_dialog)
+        about = self.make_action("about", 'A&bout', 'F1',
+            'Display a dialog box with information about the program.', self.show_about_dialog)
+        help_menu.addAction(shortcuts)
         help_menu.addAction(about)
-        
+
         help_toolbar = self.addToolBar("Help")
+        help_toolbar.addAction(shortcuts)
         help_toolbar.addAction(about)
 
         # Setup the network status windows for logging
@@ -321,7 +327,7 @@ class CSU_RP1210(QMainWindow):
             info_box_area_layout[key].addWidget(info_box[key])
             
             #Add some labels and content
-            self.status_icon[key] = QLabel("<html><img src='{}/icons/icons8_Unavailable_48px.png'><br>Network<br>Unavailable</html>".format(module_directory))
+            self.status_icon[key] = QLabel(status_html("network_unavailable", "Network<br>Unavailable"))
             self.status_icon[key].setAlignment(Qt.AlignCenter)
             
             self.previous_count[key] = 0
@@ -358,6 +364,10 @@ class CSU_RP1210(QMainWindow):
         self.Components = ComponentInfoTab(self, self.tabs)
 
         
+        # Ctrl+1 ... Ctrl+9 switch tabs (listed in Help > Keyboard Shortcuts).
+        for i in range(min(9, self.tabs.count())):
+            QShortcut(QKeySequence("Ctrl+{}".format(i + 1)), self, activated=lambda i=i: self.tabs.setCurrentIndex(i))
+
         self.grid_layout.addWidget(info_box_area["J1939"],0,0,1,1)
         self.grid_layout.addWidget(info_box_area["J1708"],1,0,1,1)
         self.grid_layout.addWidget(self.tabs,0,1,4,1)
@@ -374,50 +384,84 @@ class CSU_RP1210(QMainWindow):
         fig.savefig(img, format='PDF',)
         return img
 
+    def make_action(self, icon_name, text, shortcut, tip, slot):
+        """A menu/toolbar command with its icon, keyboard shortcut and tip (the tooltip shows the shortcut)."""
+        action = QAction(app_icons.icon(icon_name), text, self)
+        action.setShortcut(QKeySequence(shortcut))
+        action.setStatusTip(tip)
+        action.setToolTip("{} ({})".format(text.replace("&", "").rstrip("."), QKeySequence(shortcut).toString(QKeySequence.NativeText)))
+        action.triggered.connect(slot)
+        return action
+
     def setup_RP1210_menus(self):
-        connect_rp1210 = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Connected_48px.png')), '&Client Connect', self)
-        connect_rp1210.setShortcut('Ctrl+Shift+C')
-        connect_rp1210.setStatusTip('Connect Vehicle Diagnostic Adapter')
-        connect_rp1210.triggered.connect(self.selectRP1210)
-        self.rp1210_menu.addAction(connect_rp1210)
-
-        rp1210_version = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Versions_48px.png')), '&Driver Version', self)
-        rp1210_version.setShortcut('Ctrl+Shift+V')
-        rp1210_version.setStatusTip('Show Vehicle Diagnostic Adapter Driver Version Information')
-        rp1210_version.triggered.connect(self.display_version)
-        self.rp1210_menu.addAction(rp1210_version)
-
-        rp1210_detailed_version = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_More_Details_48px.png')), 'De&tailed Version', self)
-        rp1210_detailed_version.setShortcut('Ctrl+Shift+T')
-        rp1210_detailed_version.setStatusTip('Show Vehicle Diagnostic Adapter Detailed Version Information')
-        rp1210_detailed_version.triggered.connect(self.display_detailed_version)
-        self.rp1210_menu.addAction(rp1210_detailed_version)
-
-        rp1210_get_hardware_status = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Steam_48px.png')), 'Get &Hardware Status', self)
-        rp1210_get_hardware_status.setShortcut('Ctrl+Shift+H')
-        rp1210_get_hardware_status.setStatusTip('Determine details regarding the hardware interface status and its connections.')
-        rp1210_get_hardware_status.triggered.connect(self.get_hardware_status)
-        self.rp1210_menu.addAction(rp1210_get_hardware_status)
-
-        rp1210_get_hardware_status_ex = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_System_Information_48px.png')), 'Get &Extended Hardware Status', self)
-        rp1210_get_hardware_status_ex.setShortcut('Ctrl+Shift+E')
-        rp1210_get_hardware_status_ex.setStatusTip('Determine the hardware interface status and whether the VDA device is physically connected.')
-        rp1210_get_hardware_status_ex.triggered.connect(self.get_hardware_status_ex)
-        self.rp1210_menu.addAction(rp1210_get_hardware_status_ex)
-
-        disconnect_rp1210 = QAction(QIcon(os.path.join(module_directory,r'icons/icons8_Disconnected_48px.png')), 'Client &Disconnect', self)
-        disconnect_rp1210.setShortcut('Ctrl+Shift+D')
-        disconnect_rp1210.setStatusTip('Disconnect all RP1210 Clients')
-        disconnect_rp1210.triggered.connect(self.disconnectRP1210)
-        self.rp1210_menu.addAction(disconnect_rp1210)
-
+        actions = [
+            self.make_action("connect", '&Client Connect...', 'Ctrl+Shift+C',
+                             'Connect Vehicle Diagnostic Adapter', self.selectRP1210),
+            self.make_action("driver_version", '&Driver Version', 'Ctrl+Shift+V',
+                             'Show Vehicle Diagnostic Adapter Driver Version Information', self.display_version),
+            self.make_action("detailed_version", 'De&tailed Version', 'Ctrl+Shift+T',
+                             'Show Vehicle Diagnostic Adapter Detailed Version Information', self.display_detailed_version),
+            self.make_action("hardware_status", 'Get &Hardware Status', 'Ctrl+Shift+H',
+                             'Determine details regarding the hardware interface status and its connections.',
+                             self.get_hardware_status),
+            self.make_action("hardware_status_ex", 'Get &Extended Hardware Status', 'Ctrl+Shift+E',
+                             'Determine the hardware interface status and whether the VDA device is physically connected.',
+                             self.get_hardware_status_ex),
+            self.make_action("disconnect", 'Client Dis&connect', 'Ctrl+Shift+X',
+                             'Disconnect all RP1210 Clients', self.disconnectRP1210),
+        ]
         self.RP1210_toolbar = self.addToolBar("RP1210")
-        self.RP1210_toolbar.addAction(connect_rp1210)
-        self.RP1210_toolbar.addAction(rp1210_version)
-        self.RP1210_toolbar.addAction(rp1210_detailed_version)
-        self.RP1210_toolbar.addAction(rp1210_get_hardware_status)
-        self.RP1210_toolbar.addAction(rp1210_get_hardware_status_ex)
-        self.RP1210_toolbar.addAction(disconnect_rp1210)
+        for action in actions:
+            self.rp1210_menu.addAction(action)
+            self.RP1210_toolbar.addAction(action)
+
+    def show_shortcuts_dialog(self):
+        """Help > Keyboard Shortcuts: every menu command, tab and tab button with its keys."""
+        rows = []
+        for menu_action in self.menuBar().actions():
+            menu = menu_action.menu()
+            for action in menu.actions() if menu else []:
+                if not action.shortcut().isEmpty():
+                    rows.append((menu_action.text().replace("&", ""), action.text().replace("&", "").rstrip("."),
+                                 action.shortcut().toString(QKeySequence.NativeText)))
+        for i in range(min(9, self.tabs.count())):
+            rows.append(("Tabs", self.tabs.tabText(i), "Ctrl+{}".format(i + 1)))
+        rows += [("J1939 PGNs tab", "Dynamically update table", "Alt+U"),
+                 ("J1939 PGNs tab", "Expand multiplexed PGNs", "Alt+X"),
+                 ("J1939 PGNs tab", "Industry group", "Alt+G"),
+                 ("J1939 PGNs tab", "Stop J1939 broadcast", "Alt+B"),
+                 ("J1939 PGNs tab", "Clear J1939 PGN table", "Alt+L"),
+                 ("J1939 Diagnostic Codes tab", "Request previously active DTCs (DM2)", "Alt+2"),
+                 ("J1939 Freeze Frames tab", "Request freeze frame parameters (DM4)", "Alt+4"),
+                 ("J1587 Data tab", "Dynamically update table", "Alt+U"),
+                 ("J1587 Data tab", "Clear J1587 table", "Alt+L"),
+                 ("Component Information tab", "Request VIN", "Alt+V"),
+                 ("Component Information tab", "Request component ID", "Alt+C"),
+                 ("Component Information tab", "Request software ID", "Alt+S"),
+                 ("Component Information tab", "Request ECU distances", "Alt+D"),
+                 ("Component Information tab", "Request ECU hours", "Alt+O"),
+                 ("Component Information tab", "Request address claims", "Alt+A"),
+                 ("Component Information tab", "Refresh data", "F5 or Alt+E")]
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Keyboard Shortcuts")
+        dialog.setWindowIcon(app_icons.icon("shortcuts"))
+        table = QTableWidget(len(rows), 3)
+        table.setHorizontalHeaderLabels(["Where", "Command", "Keys"])
+        for r, row in enumerate(rows):
+            for c, value in enumerate(row):
+                table.setItem(r, c, QTableWidgetItem(value))
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        table.verticalHeader().setDefaultSectionSize(22)
+        table.resizeColumnsToContents()
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout = QVBoxLayout()
+        layout.addWidget(table)
+        layout.addWidget(buttons)
+        dialog.setLayout(layout)
+        dialog.resize(table.horizontalHeader().length() + 60, 560)
+        dialog.exec_()
 
     def create_new(self, new_file=True):
         self.data_package = {"File Format":{"major":CSU_RP1210_version["major"],
@@ -441,6 +485,7 @@ class CSU_RP1210(QMainWindow):
         self.data_package["Distance Information"] = {}
         self.data_package["ECU Time Information"] = {}
         self.data_package["Event Data"] = {}
+        self.data_package["Address Claims"] = {}
         self.data_package["GPS Data"] = {
             "Altitude": 0.0,
             "GPS Time": None,
@@ -454,6 +499,7 @@ class CSU_RP1210(QMainWindow):
                                                  }
         self.request_timeout = 1
 
+        self.J1939.address_claims = {}
         self.J1939.reset_data()
         self.J1939.clear_j1939_table()
         self.J1587.clear_J1587_table()
@@ -474,6 +520,193 @@ class CSU_RP1210(QMainWindow):
     #     streamHandler.setLevel(logging.CRITICAL)
     #     l.addHandler(streamHandler)    
     #
+    def load_j1939db(self):
+        """
+        Load the J1939 database in place (the tabs hold a reference to this dict).
+        Search order: $CSU_J1939DB, then the licensed database for the preferred
+        units (J1939db.us.licensed.json or J1939db.licensed.json), then the other
+        unit system, then the skeleton J1939db.json.
+        """
+        db = {"J1939BitDecodings":{},
+              "J1939FMITabledb": {},
+              "J1939LampFlashTabledb": {},
+              "J1939OBDTabledb": {},
+              "J1939PGNdb": {},
+              "J1939SAHWTabledb": {},
+              "J1939SATabledb": {},
+              "J1939SPNdb": {} }
+        units = j1939db_tools.read_unit_preference(get_storage_path())
+        candidates = [os.environ.get("CSU_J1939DB")]
+        for directory in database_directories():
+            candidates += j1939db_tools.database_candidates(directory, units)[:2]   # licensed files first
+        candidates += j1939db_tools.database_candidates(module_directory, units)
+        for candidate in filter(None, candidates):
+            try:
+                with open(candidate,'r') as j1939_file:
+                    db.update(json.load(j1939_file))
+                logger.info("Loaded J1939 database from {} (preferred units: {})".format(candidate, units))
+                break
+            except FileNotFoundError:
+                continue
+        else:
+            logger.debug("No J1939 database file was found.")
+        if db.get("_meta", {}).get("skeleton"):
+            logger.warning("Only the skeleton J1939db.json is loaded. Use Tools > J1939 Database to create "
+                           "a licensed database from the Digital Annex.")
+        self.j1939db.clear()
+        self.j1939db.update(db)
+        self.update_database_status()
+
+    def open_digital_annex_dialog(self):
+        dialog = DigitalAnnexDialog(self, storage_dir=get_storage_path())
+        dialog.database_created.connect(lambda outputs: self.load_j1939db())
+        dialog.exec_()
+        # The units preference (shared with J1587) may have changed even without regenerating.
+        self.load_j1939db()
+        self.load_j1587db()
+        self.statusBar().showMessage("J1939 database reloaded ({} PGNs).".format(len(self.j1939db.get("J1939PGNdb", {}))))
+
+    def load_j1587db(self):
+        """
+        Load the J1587 database in place (the J1587 tab holds a reference to this dict).
+        Search order: $CSU_J1587DB, then the licensed database for the preferred
+        units (J1587db.us.licensed.json or J1587db.licensed.json), then the other
+        unit system, then the skeleton J1587db.json.
+        """
+        db = {"FMI": {}, "MID": {}, "MIDAlias": {}, "PID": {}, "PIDNames": {}, "SID": {}}
+        units = j1939db_tools.read_unit_preference(get_storage_path())
+        candidates = [os.environ.get("CSU_J1587DB")]
+        for directory in database_directories():
+            candidates += j1587db_tools.database_candidates(directory, units)[:2]
+        candidates += j1587db_tools.database_candidates(module_directory, units)
+        for candidate in filter(None, candidates):
+            try:
+                with open(candidate, 'r', encoding='utf-8') as j1587_file:
+                    db.update(json.load(j1587_file))
+                logger.info("Loaded J1587 database from {} (preferred units: {})".format(candidate, units))
+                break
+            except FileNotFoundError:
+                continue
+        if db.get("_meta", {}).get("skeleton"):
+            logger.warning("Only the skeleton J1587db.json is loaded. Use Tools > J1587 Database to create "
+                           "a licensed database from the SAE J1587 document.")
+        self.j1587db.clear()
+        self.j1587db.update(db)
+        self.update_database_status()
+
+    def update_database_status(self):
+        """Permanent status bar note of which J1939/J1587 databases are loaded (red for a skeleton)."""
+        if not hasattr(self, "database_status"):
+            self.database_status = QLabel()
+            self.statusBar().addPermanentWidget(self.database_status)
+        parts, skeleton = [], False
+        for label, db, table in (("J1939", getattr(self, "j1939db", {}), "J1939PGNdb"),
+                                 ("J1587", getattr(self, "j1587db", {}), "PID")):
+            meta = db.get("_meta", {})
+            if not db:
+                continue
+            if meta.get("skeleton") or not db.get(table):
+                skeleton = True
+                parts.append("{} database: skeleton (Tools > {} Database)".format(label, label))
+            else:
+                parts.append("{} database: licensed, {}".format(label, "US" if meta.get("units") == "us" else "metric"))
+        self.database_status.setText("  |  ".join(parts))
+        self.database_status.setStyleSheet("color: #c4320a; font-weight: bold;" if skeleton else "")
+
+    def open_j1587_database_dialog(self):
+        dialog = J1587DatabaseDialog(self, storage_dir=get_storage_path())
+        dialog.database_created.connect(lambda outputs: self.load_j1587db())
+        dialog.exec_()
+        self.load_j1587db()
+        self.load_j1939db()
+        self.statusBar().showMessage("J1587 database reloaded ({} PIDs).".format(len(self.j1587db.get("PID", {}))))
+
+    def export_j1939_dbc(self):
+        meta = self.j1939db.get("_meta", {})
+        if meta.get("skeleton") or not self.j1939db.get("J1939PGNdb"):
+            QMessageBox.information(self, "Export J1939 DBC",
+                "Only the skeleton J1939 database is loaded. Create the licensed database with "
+                "Tools > J1939 Database first.")
+            return
+        units = meta.get("units", "metric")
+        default = os.path.join(get_storage_path(), "J1939.{}.licensed.dbc".format(units))
+        fname, _ = QFileDialog.getSaveFileName(self, "Export J1939 DBC", default, "CAN database (*.dbc)")
+        if not fname:
+            return
+        text, stats = j1939_dbc.build(self.j1939db)
+        with open(fname, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        QMessageBox.information(self, "Export J1939 DBC",
+            "Wrote {} ({} units): {} messages, {} signals, {} value tables.\n\n{} SPNs that a DBC cannot "
+            "represent (text, variable length or split fields) are listed in the message comments.\n\n"
+            "The file contains licensed J1939 content: do not share or commit it.".format(
+                fname, units, stats["messages"], stats["signals"], stats["value_tables"], stats["skipped_spns"]))
+
+    def convert_vehicle_spy(self):
+        fname, _ = QFileDialog.getOpenFileName(self, "Vehicle Spy Log", self.export_path,
+                                               "Vehicle Spy logs (*.csv);;All Files (*.*)")
+        if not fname:
+            return
+        out, _ = QFileDialog.getSaveFileName(self, "Save candump log", os.path.splitext(fname)[0] + ".candump",
+                                             "candump log (*.candump *.log);;All Files (*.*)")
+        if not out:
+            return
+        n = vehicle_spy.to_candump(fname, out)
+        self.statusBar().showMessage("Wrote {} CAN frames to {}".format(n, out))
+
+    def open_vehicle_spy(self):
+        """Play a Vehicle Spy 3 log through the J1939 and J1587 tabs, as if read from an adapter."""
+        fname, _ = QFileDialog.getOpenFileName(self, "Import Vehicle Spy Log", self.export_path,
+                                               "Vehicle Spy logs (*.csv);;All Files (*.*)")
+        if fname:
+            self.import_vehicle_spy(fname)
+
+    def import_vehicle_spy(self, fname):
+        with open(fname, "rb") as f:
+            total = sum(1 for _ in f)
+        progress = QProgressDialog(self)
+        progress.setMinimumWidth(600)
+        progress.setWindowTitle("Importing Vehicle Spy Log")
+        progress.setMinimumDuration(0)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMaximum(total)
+        counts = {"J1939": 0, "J1587": 0, "skipped": 0}
+        reassembler = vehicle_spy.J1939Reassembler()
+        logger.info("Importing Vehicle Spy log {}".format(fname))
+        for i, record in enumerate(vehicle_spy.read(fname)):
+            timestamp = int(record.time * 1e6)
+            if isinstance(record, vehicle_spy.CANRecord):
+                if record.error or not record.extended:
+                    counts["skipped"] += 1
+                    continue
+                for priority, pgn, sa, da, data in reassembler.feed(record):
+                    buffer = vehicle_spy.rp1210_j1939(timestamp, priority, pgn, sa, da, data, echo=record.tx)
+                    try:
+                        self.J1939.fill_j1939_table({'current_time': record.time, 'data': buffer})
+                        counts["J1939"] += 1
+                    except Exception:
+                        logger.debug(traceback.format_exc())
+            elif record.checksum_ok and not record.error:
+                try:
+                    self.J1587.fill_j1587_table((record.time, vehicle_spy.rp1210_j1708(timestamp, record, echo=record.tx)))
+                    counts["J1587"] += 1
+                except Exception:
+                    logger.debug(traceback.format_exc())
+            else:
+                counts["skipped"] += 1
+            if i % 500 == 0:
+                progress.setValue(min(record.line, total))
+                progress.setLabelText("{} J1939 and {} J1708 messages".format(counts["J1939"], counts["J1587"]))
+                QCoreApplication.processEvents()
+                if progress.wasCanceled():
+                    break
+        progress.close()
+        message = "Imported {}: {} J1939 messages, {} J1708 messages, {} skipped.".format(
+            os.path.basename(fname), counts["J1939"], counts["J1587"], counts["skipped"])
+        logger.info(message)
+        self.statusBar().showMessage(message)
+        return counts
+
     def open_open_logger2(self):
         filters = "{} Data Files (*.bin);;All Files (*.*)".format(self.title)
         selected_filter = "CAN Logger 2 Data Files (*.bin)"
@@ -565,7 +798,7 @@ class CSU_RP1210(QMainWindow):
                         rp1210_message += struct.pack('B', sa) 
                         rp1210_message += struct.pack('B', da) 
                         rp1210_message += data_bytes
-                        self.rx_queues["Logger"].put((timestamp, rp1210_message))
+                        self.rx_queues["Logger"].put({'current_time': timestamp, 'data': rp1210_message})
                     bytes_processed += 512
                     progress.setValue(bytes_processed)
                     progress_label.setText("Processed {:0.3f} of {:0.3f} Mbytes.".format(bytes_processed/1000000,file_size/1000000))
@@ -613,7 +846,17 @@ class CSU_RP1210(QMainWindow):
         self.J1939.uds_data_model.signalUpdate()
         self.J1939.uds_table.resizeRowsToContents()
         for c in self.J1939.uds_resizable_cols:
-            self.J1939.uds_table.resizeColumnToContents(c)       
+            self.J1939.uds_table.resizeColumnToContents(c)
+
+        # Address claims saved in the data package override source address names again.
+        self.J1939.address_claims = {}
+        for claim in self.data_package.setdefault("Address Claims", {}).values():
+            try:
+                raw = int(claim["NAME"], 16)
+                self.J1939.address_claims[int(claim["Source Address"])] = j1939_name.decode(raw.to_bytes(8, "little"))
+            except (KeyError, ValueError, TypeError):
+                continue
+        self.J1939.refresh_sources()
 
     def confirm_quit(self):
         self.close()
@@ -642,6 +885,7 @@ class CSU_RP1210(QMainWindow):
         protocol = selection.protocol
         deviceID = selection.deviceID
         speed    = selection.speed
+        channel  = getattr(selection, "channel", 1)
 
         if dll_name is None: #this is what happens when you hit cancel
             return
@@ -671,11 +915,11 @@ class CSU_RP1210(QMainWindow):
         
         # We want to connect to multiple clients with different protocols.
         self.client_ids={}
-        self.client_ids["CAN"] = self.RP1210.get_client_id("CAN", deviceID, "{}".format(speed))
+        self.client_ids["CAN"] = self.RP1210.get_client_id("CAN", deviceID, "{}".format(speed), channel)
         progress.setValue(1)
         self.client_ids["J1708"] = self.RP1210.get_client_id("J1708", deviceID, "Auto")
         progress.setValue(2)
-        self.client_ids["J1939"] = self.RP1210.get_client_id("J1939", deviceID, "{}".format(speed))
+        self.client_ids["J1939"] = self.RP1210.get_client_id("J1939", deviceID, "{}".format(speed), channel)
         progress.setValue(3)
         #self.client_ids["ISO15765"] = self.RP1210.get_client_id("ISO15765", deviceID, "Auto")
         #progress.setValue(3)
@@ -686,7 +930,8 @@ class CSU_RP1210(QMainWindow):
         file_contents={ "dll_name":dll_name,
                         "protocol":protocol,
                         "deviceID":deviceID,
-                        "speed":speed
+                        "speed":speed,
+                        "channel":channel
                        }
         logger.debug(selection.connections_file)
         try:
@@ -733,7 +978,7 @@ class CSU_RP1210(QMainWindow):
                                                                                   self.RP1210.ReadMessage, 
                                                                                   nClientID,
                                                                                   protocol,"CSU_RP1210")
-                    self.read_message_threads[protocol].setDaemon(True) #needed to close the thread when the application closes.
+                    self.read_message_threads[protocol].daemon = True #needed to close the thread when the application closes.
                     self.read_message_threads[protocol].start()
                     logger.debug("Started RP1210ReadMessage Thread.")
 
@@ -761,9 +1006,15 @@ class CSU_RP1210(QMainWindow):
             i+=1
             progress.setValue(3+i)
         
-        if self.client_ids["J1939"] is None or self.client_ids["J1708"] is None:
-            QMessageBox.information(self,"RP1210 Client Not Connected.","The default RP1210 Device was not found or is unplugged. Please reconnect your Vehicle Diagnostic Adapter (VDA) and select the RP1210 device to use.")
+        progress.close()
         progress.deleteLater()
+        # Not every adapter has J1708 (e.g. PEAK); warn only when no CAN-based client connected.
+        # The box is shown from the event loop: opening it while the window-modal progress
+        # dialog is still on screen (connection attempts can take seconds) crashes Qt.
+        if self.client_ids["J1939"] is None and self.client_ids["CAN"] is None:
+            QTimer.singleShot(0, lambda: QMessageBox.information(self, "RP1210 Client Not Connected.",
+                "The default RP1210 Device was not found or is unplugged. Please reconnect your Vehicle "
+                "Diagnostic Adapter (VDA) and select the RP1210 device to use."))
 
     def check_connections(self):
         '''
@@ -777,21 +1028,21 @@ class CSU_RP1210(QMainWindow):
             try:
                 current_count = self.read_message_threads[key].message_count
                 duration = time.time() - self.read_message_threads[key].start_time
-                self.message_duration_label[key].setText("<html><img src='{}/icons/icons8_Connected_48px.png'><br>Client Connected<br>{:0.0f} sec.</html>".format(module_directory, duration))
+                self.message_duration_label[key].setText(status_html("client_connected", "Client Connected<br>{:0.0f} sec.".format(duration)))
                 network_connection[key] = True
             except (KeyError, AttributeError) as e:
                 current_count = 0
                 duration = 0
-                self.message_duration_label[key].setText("<html><img src='{}/icons/icons8_Disconnected_48px.png'><br>Client Disconnected<br>{:0.0f} sec.</html>".format(module_directory, duration))
+                self.message_duration_label[key].setText(status_html("client_disconnected", "Client Disconnected<br>{:0.0f} sec.".format(duration)))
                 
             count_change = current_count - self.previous_count[key]
             self.previous_count[key] = current_count
             # See if messages come in. Change the 
             if count_change > 0 and not self.network_connected[key]: 
-                self.status_icon[key].setText("<html><img src='{}/icons/icons8_Ok_48px.png'><br>Network<br>Online</html>".format(module_directory))
+                self.status_icon[key].setText(status_html("network_online", "Network<br>Online"))
                 self.network_connected[key] = True
             elif count_change == 0 and self.network_connected[key]:             
-                self.status_icon[key].setText("<html><img src='{}/icons/icons8_Unavailable_48px.png'><br>Network<br>Unavailable</html>".format(module_directory))
+                self.status_icon[key].setText(status_html("network_unavailable", "Network<br>Unavailable"))
                 self.network_connected[key] = False
 
             self.message_count_label[key].setText("Message Count:\n{}".format(humanize.intcomma(current_count)))
@@ -945,6 +1196,12 @@ class CSU_RP1210(QMainWindow):
         try:
             return self.J1939.j1939_unique_ids[repr((pgn,sa))]["Bytes"]
         except KeyError:
+            # With "Expand Multiplexed PGNs", a multiplexed PGN has one row per selector:
+            # return the most recent of them.
+            rows = [r for r in self.J1939.j1939_unique_ids.values()
+                    if r.get("PGN", "").strip() == str(pgn) and r.get("SA", "").strip() == str(sa)]
+            if rows:
+                return max(rows, key=lambda r: r.get("Message Time", 0))["Bytes"]
             return False
           
 
@@ -996,12 +1253,20 @@ class CSU_RP1210(QMainWindow):
         
     def show_about_dialog(self):
         logger.debug("show_about_dialog Request")
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Information)
+        msg = QMessageBox(self)
+        msg.setIconPixmap(app_icons.icon("app").pixmap(64, 64))
         msg.setText("About CSU-RP1210")
-        msg.setInformativeText("""Icons by Icons8\nhttps://icons8.com/""")
+        version = "{}.{}.{}".format(CSU_RP1210_version.get("major", 0), CSU_RP1210_version.get("minor", 0),
+                                    CSU_RP1210_version.get("patch", 0))
+        msg.setInformativeText("Version {}\nHeavy vehicle network diagnostics: J1939, J1587, RP1210 and CAN FD.\n\n"
+                               "Help > Keyboard Shortcuts (Ctrl+/) lists every shortcut.".format(version))
         msg.setWindowTitle("About")
-        msg.setDetailedText("There will be some details here.")
+        j1939_meta, j1587_meta = self.j1939db.get("_meta", {}), self.j1587db.get("_meta", {})
+        msg.setDetailedText(
+            "J1939 database: {}\nJ1587 database: {}\n\nThe icons are original artwork of this project "
+            "(icons/, tools/make_icons.py) under its license.".format(
+                "skeleton" if j1939_meta.get("skeleton") else "licensed, {} units".format(j1939_meta.get("units", "?")),
+                "skeleton" if j1587_meta.get("skeleton") else "licensed, {} units".format(j1587_meta.get("units", "?"))))
         msg.setStandardButtons(QMessageBox.Ok)
         msg.setWindowModality(Qt.ApplicationModal)
         msg.exec_()
@@ -1038,5 +1303,10 @@ class CSU_RP1210(QMainWindow):
 if __name__ == '__main__':
 
     app = QApplication(sys.argv)
-    execute = CSU_RP1210()
+    app.setWindowIcon(app_icons.icon("app"))
+    # Immediate feedback while the databases load and the window is built.
+    splash = app_icons.show_splash("{}.{}.{}".format(CSU_RP1210_version.get("major", 0),
+                                                     CSU_RP1210_version.get("minor", 0),
+                                                     CSU_RP1210_version.get("patch", 0)))
+    execute = CSU_RP1210(splash)
     sys.exit(app.exec_())

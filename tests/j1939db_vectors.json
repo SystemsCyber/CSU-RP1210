@@ -1,0 +1,668 @@
+{
+ "_doc": [
+  "Decode test vectors for J1939 databases. Each vector decodes one SPN from a PGN payload and checks",
+  "'expected' (value per unit system, absolute 'tolerance'), 'expected_status' or 'expected_text'.",
+  "LICENSING: vectors must not reproduce the SAE J1939 Digital Annex. They hold payloads and expected",
+  "results only (no scaling, offsets, bit positions, ranges or DA descriptions), cover at most 40",
+  "widely published SPNs with at most 3 vectors each, and use our own names. tests/test_no_licensed_content.py",
+  "enforces this. Regenerate with: python tests/build_vectors.py (requires the local licensed databases)."
+ ],
+ "vectors": [
+  {
+   "name": "Synthetic shaft speed",
+   "pgn": 65280,
+   "spn": 520192,
+   "data": "401F0182006400FF",
+   "expected": {
+    "metric": 1000.0,
+    "us": 1000.0
+   },
+   "tolerance": 0.001,
+   "source": "synthetic (tests/synthetic_da.py)"
+  },
+  {
+   "name": "Synthetic fluid temperature",
+   "pgn": 65280,
+   "spn": 520193,
+   "data": "401F3C82006400FF",
+   "expected": {
+    "metric": 20.0,
+    "us": 68.0
+   },
+   "tolerance": 0.001,
+   "source": "synthetic (tests/synthetic_da.py)"
+  },
+  {
+   "name": "Synthetic fluid pressure",
+   "pgn": 65280,
+   "spn": 520194,
+   "data": "401F3C64006400FF",
+   "expected": {
+    "metric": 400.0,
+    "us": 58.0150951
+   },
+   "tolerance": 0.001,
+   "source": "synthetic (tests/synthetic_da.py)"
+  },
+  {
+   "name": "Synthetic road speed",
+   "pgn": 65280,
+   "spn": 520195,
+   "data": "401F3C64006400FF",
+   "expected": {
+    "metric": 100.0,
+    "us": 62.13711922
+   },
+   "tolerance": 0.001,
+   "source": "synthetic (tests/synthetic_da.py)"
+  },
+  {
+   "name": "Synthetic distance",
+   "pgn": 65281,
+   "spn": 520197,
+   "data": "00350C00C8000000",
+   "expected": {
+    "metric": 100000.0,
+    "us": 62137.11922
+   },
+   "tolerance": 0.001,
+   "source": "synthetic (tests/synthetic_da.py)"
+  },
+  {
+   "name": "Synthetic fluid volume",
+   "pgn": 65281,
+   "spn": 520198,
+   "data": "00350C00C8000000",
+   "expected": {
+    "metric": 100.0,
+    "us": 26.41720524
+   },
+   "tolerance": 0.001,
+   "source": "synthetic (tests/synthetic_da.py)"
+  },
+  {
+   "name": "Synthetic acceleration (unit with a digit)",
+   "pgn": 65283,
+   "spn": 520200,
+   "data": "0001FFFFFFFFFFFF",
+   "expected": {
+    "metric": 13.1,
+    "us": 42.97900262
+   },
+   "tolerance": 0.001,
+   "source": "synthetic (tests/synthetic_da.py)"
+  },
+  {
+   "name": "Engine speed (highway cruise)",
+   "pgn": 61444,
+   "spn": 190,
+   "data": "FFB7B4502DFFFFFF",
+   "expected": {
+    "metric": 1450.0,
+    "us": 1450.0
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Actual engine torque (percent) (highway cruise)",
+   "pgn": 61444,
+   "spn": 513,
+   "data": "FFB7B4502DFFFFFF",
+   "expected": {
+    "metric": 55.0,
+    "us": 55.0
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Driver demand torque (percent) (highway cruise)",
+   "pgn": 61444,
+   "spn": 512,
+   "data": "FFB7B4502DFFFFFF",
+   "expected": {
+    "metric": 58.0,
+    "us": 58.0
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Accelerator pedal position (highway cruise)",
+   "pgn": 61443,
+   "spn": 91,
+   "data": "FF603EFFFFFFFFFF",
+   "expected": {
+    "metric": 38.4,
+    "us": 38.4
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Engine load at current speed (highway cruise)",
+   "pgn": 61443,
+   "spn": 92,
+   "data": "FF603EFFFFFFFFFF",
+   "expected": {
+    "metric": 62.0,
+    "us": 62.0
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Engine coolant temperature (highway cruise)",
+   "pgn": 65262,
+   "spn": 110,
+   "data": "8055C02EFFFFFFFF",
+   "expected": {
+    "metric": 88.0,
+    "us": 190.4
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Fuel temperature (highway cruise)",
+   "pgn": 65262,
+   "spn": 174,
+   "data": "8055C02EFFFFFFFF",
+   "expected": {
+    "metric": 45.0,
+    "us": 113.0
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Engine oil temperature (highway cruise)",
+   "pgn": 65262,
+   "spn": 175,
+   "data": "8055C02EFFFFFFFF",
+   "expected": {
+    "metric": 101.0,
+    "us": 213.8
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Engine oil pressure (highway cruise)",
+   "pgn": 65263,
+   "spn": 100,
+   "data": "FFFFFF56FFFFFFFF",
+   "expected": {
+    "metric": 344.0,
+    "us": 49.892981769
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Wheel-based vehicle speed (highway cruise)",
+   "pgn": 65265,
+   "spn": 84,
+   "data": "F38068CFFFFFFFFF",
+   "expected": {
+    "metric": 104.5,
+    "us": 64.933289585
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Parking brake switch (state) (highway cruise)",
+   "pgn": 65265,
+   "spn": 70,
+   "data": "F38068CFFFFFFFFF",
+   "expected": {
+    "metric": 0.0,
+    "us": 0.0
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Brake switch (state) (highway cruise)",
+   "pgn": 65265,
+   "spn": 597,
+   "data": "F38068CFFFFFFFFF",
+   "expected": {
+    "metric": 0.0,
+    "us": 0.0
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Fuel rate (highway cruise)",
+   "pgn": 65266,
+   "spn": 183,
+   "data": "89026C06FFFFFFFF",
+   "expected": {
+    "metric": 32.45,
+    "us": 8.5723831
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Instantaneous fuel economy (highway cruise)",
+   "pgn": 65266,
+   "spn": 184,
+   "data": "89026C06FFFFFFFF",
+   "expected": {
+    "metric": 3.2109375,
+    "us": 7.552593261
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Boost pressure (intake manifold 1) (highway cruise)",
+   "pgn": 65270,
+   "spn": 102,
+   "data": "FF5657FFFFFFFFFF",
+   "expected": {
+    "metric": 172.0,
+    "us": 24.946490884
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Intake manifold 1 temperature (highway cruise)",
+   "pgn": 65270,
+   "spn": 105,
+   "data": "FF5657FFFFFFFFFF",
+   "expected": {
+    "metric": 47.0,
+    "us": 116.6
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Charging system voltage (highway cruise)",
+   "pgn": 65271,
+   "spn": 167,
+   "data": "FFFF19011501FFFF",
+   "expected": {
+    "metric": 14.05,
+    "us": 14.05
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Battery voltage (highway cruise)",
+   "pgn": 65271,
+   "spn": 168,
+   "data": "FFFF19011501FFFF",
+   "expected": {
+    "metric": 13.85,
+    "us": 13.85
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Engine total hours (highway cruise)",
+   "pgn": 65253,
+   "spn": 247,
+   "data": "81C40300FFFFFFFF",
+   "expected": {
+    "metric": 12345.65,
+    "us": 12345.65
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Total vehicle distance (highway cruise)",
+   "pgn": 65248,
+   "spn": 245,
+   "data": "FFFFFFFFC9296300",
+   "expected": {
+    "metric": 812345.125,
+    "us": 504767.858799
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Fuel level 1 (highway cruise)",
+   "pgn": 65276,
+   "spn": 96,
+   "data": "FF9EFFFFFFFFFFFF",
+   "expected": {
+    "metric": 63.2,
+    "us": 63.2
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Barometric pressure (highway cruise)",
+   "pgn": 65269,
+   "spn": 108,
+   "data": "C7FFFF7024FFFFFF",
+   "expected": {
+    "metric": 99.5,
+    "us": 14.431254901
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Ambient air temperature (highway cruise)",
+   "pgn": 65269,
+   "spn": 171,
+   "data": "C7FFFF7024FFFFFF",
+   "expected": {
+    "metric": 18.5,
+    "us": 65.3
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Transmission current gear (highway cruise)",
+   "pgn": 61445,
+   "spn": 523,
+   "data": "87FFFF87FFFFFFFF",
+   "expected": {
+    "metric": 10.0,
+    "us": 10.0
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Transmission selected gear (highway cruise)",
+   "pgn": 61445,
+   "spn": 524,
+   "data": "87FFFF87FFFFFFFF",
+   "expected": {
+    "metric": 10.0,
+    "us": 10.0
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Time of day: seconds (highway cruise)",
+   "pgn": 65254,
+   "spn": 959,
+   "data": "B4170E0A1029FFFF",
+   "expected": {
+    "metric": 45.0,
+    "us": 45.0
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Time of day: minutes (highway cruise)",
+   "pgn": 65254,
+   "spn": 960,
+   "data": "B4170E0A1029FFFF",
+   "expected": {
+    "metric": 23.0,
+    "us": 23.0
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Time of day: hours (highway cruise)",
+   "pgn": 65254,
+   "spn": 961,
+   "data": "B4170E0A1029FFFF",
+   "expected": {
+    "metric": 14.0,
+    "us": 14.0
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Date: month (highway cruise)",
+   "pgn": 65254,
+   "spn": 963,
+   "data": "B4170E0A1029FFFF",
+   "expected": {
+    "metric": 10.0,
+    "us": 10.0
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Date: day (highway cruise)",
+   "pgn": 65254,
+   "spn": 962,
+   "data": "B4170E0A1029FFFF",
+   "expected": {
+    "metric": 4.0,
+    "us": 4.0
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Date: year (highway cruise)",
+   "pgn": 65254,
+   "spn": 964,
+   "data": "B4170E0A1029FFFF",
+   "expected": {
+    "metric": 2026.0,
+    "us": 2026.0
+   },
+   "tolerance": 0.0001,
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Vehicle identification number (highway cruise)",
+   "pgn": 65260,
+   "spn": 237,
+   "data": "31584B5944503958304C4A3132333435362A",
+   "expected_text": "1XKYDP9X0LJ123456",
+   "source": "constructed: highway cruise operating point"
+  },
+  {
+   "name": "Engine speed (key on, engine off)",
+   "pgn": 61444,
+   "spn": 190,
+   "data": "FF7D7D000000FFFF",
+   "expected": {
+    "metric": 0.0,
+    "us": 0.0
+   },
+   "tolerance": 0.0001,
+   "source": "captured: 2012 MasterCraft X30, key on (tests/fixtures/mcx30_keyon_excerpt.log)"
+  },
+  {
+   "name": "Actual engine torque (percent) (key on, engine off)",
+   "pgn": 61444,
+   "spn": 513,
+   "data": "FF7D7D000000FFFF",
+   "expected": {
+    "metric": 0.0,
+    "us": 0.0
+   },
+   "tolerance": 0.0001,
+   "source": "captured: 2012 MasterCraft X30, key on (tests/fixtures/mcx30_keyon_excerpt.log)"
+  },
+  {
+   "name": "Driver demand torque (percent) (key on, engine off)",
+   "pgn": 61444,
+   "spn": 512,
+   "data": "FF7D7D000000FFFF",
+   "expected": {
+    "metric": 0.0,
+    "us": 0.0
+   },
+   "tolerance": 0.0001,
+   "source": "captured: 2012 MasterCraft X30, key on (tests/fixtures/mcx30_keyon_excerpt.log)"
+  },
+  {
+   "name": "Engine total hours (key on, engine off)",
+   "pgn": 65253,
+   "spn": 247,
+   "data": "36270000FFFFFFFF",
+   "expected": {
+    "metric": 501.9,
+    "us": 501.9
+   },
+   "tolerance": 0.0001,
+   "source": "captured: 2012 MasterCraft X30, key on (tests/fixtures/mcx30_keyon_excerpt.log)"
+  },
+  {
+   "name": "Engine coolant temperature (key on, engine off)",
+   "pgn": 65262,
+   "spn": 110,
+   "data": "3CFFFFFFFFFF41FF",
+   "expected": {
+    "metric": 20.0,
+    "us": 68.0
+   },
+   "tolerance": 0.0001,
+   "source": "captured: 2012 MasterCraft X30, key on (tests/fixtures/mcx30_keyon_excerpt.log)"
+  },
+  {
+   "name": "Engine oil pressure (key on, engine off)",
+   "pgn": 65263,
+   "spn": 100,
+   "data": "FFFFFF00FFFFFFFF",
+   "expected": {
+    "metric": 0.0,
+    "us": 0.0
+   },
+   "tolerance": 0.0001,
+   "source": "captured: 2012 MasterCraft X30, key on (tests/fixtures/mcx30_keyon_excerpt.log)"
+  },
+  {
+   "name": "Fuel rate (key on, engine off)",
+   "pgn": 65266,
+   "spn": 183,
+   "data": "0000FFFFFFFF4AFF",
+   "expected": {
+    "metric": 0.0,
+    "us": 0.0
+   },
+   "tolerance": 0.0001,
+   "source": "captured: 2012 MasterCraft X30, key on (tests/fixtures/mcx30_keyon_excerpt.log)"
+  },
+  {
+   "name": "Charging system voltage (key on, engine off)",
+   "pgn": 65271,
+   "spn": 167,
+   "data": "FFFF1A01F200F300",
+   "expected": {
+    "metric": 14.1,
+    "us": 14.1
+   },
+   "tolerance": 0.0001,
+   "source": "captured: 2012 MasterCraft X30, key on (tests/fixtures/mcx30_keyon_excerpt.log)"
+  },
+  {
+   "name": "Battery voltage (key on, engine off)",
+   "pgn": 65271,
+   "spn": 168,
+   "data": "FFFF1A01F200F300",
+   "expected": {
+    "metric": 12.1,
+    "us": 12.1
+   },
+   "tolerance": 0.0001,
+   "source": "captured: 2012 MasterCraft X30, key on (tests/fixtures/mcx30_keyon_excerpt.log)"
+  },
+  {
+   "name": "Accelerator pedal position (key on, engine off)",
+   "pgn": 61443,
+   "spn": 91,
+   "data": "DF004FFF00FFFFFF",
+   "expected": {
+    "metric": 0.0,
+    "us": 0.0
+   },
+   "tolerance": 0.0001,
+   "source": "captured: 2012 MasterCraft X30, key on (tests/fixtures/mcx30_keyon_excerpt.log)"
+  },
+  {
+   "name": "Engine load at current speed (key on, engine off)",
+   "pgn": 61443,
+   "spn": 92,
+   "data": "DF004FFF00FFFFFF",
+   "expected": {
+    "metric": 79.0,
+    "us": 79.0
+   },
+   "tolerance": 0.0001,
+   "source": "captured: 2012 MasterCraft X30, key on (tests/fixtures/mcx30_keyon_excerpt.log)"
+  },
+  {
+   "name": "Fuel level 1 (key on, engine off)",
+   "pgn": 65276,
+   "spn": 96,
+   "data": "FFA3FFFFFFFFFFFF",
+   "expected": {
+    "metric": 65.2,
+    "us": 65.2
+   },
+   "tolerance": 0.0001,
+   "source": "captured: 2012 MasterCraft X30, key on (tests/fixtures/mcx30_keyon_excerpt.log)"
+  },
+  {
+   "name": "Intake manifold 1 temperature (key on, engine off)",
+   "pgn": 65270,
+   "spn": 105,
+   "data": "FFFF3C2AFFFFFFFF",
+   "expected": {
+    "metric": 20.0,
+    "us": 68.0
+   },
+   "tolerance": 0.0001,
+   "source": "captured: 2012 MasterCraft X30, key on (tests/fixtures/mcx30_keyon_excerpt.log)"
+  },
+  {
+   "name": "Wheel-based vehicle speed (key on, engine off)",
+   "pgn": 65265,
+   "spn": 84,
+   "data": "FF0000F0FFC71FFF",
+   "expected": {
+    "metric": 0.0,
+    "us": 0.0
+   },
+   "tolerance": 0.0001,
+   "source": "captured: 2012 MasterCraft X30, key on (tests/fixtures/mcx30_keyon_excerpt.log)"
+  },
+  {
+   "name": "Engine speed not available",
+   "pgn": 61444,
+   "spn": 190,
+   "data": "FFFFFFFFFFFFFFFF",
+   "expected_status": "NotAvailable",
+   "source": "J1939-71 not-available range"
+  },
+  {
+   "name": "Engine coolant temperature error indicator",
+   "pgn": 65262,
+   "spn": 110,
+   "data": "FEFFFFFFFFFFFFFF",
+   "expected_status": "Error",
+   "source": "J1939-71 error indicator range"
+  },
+  {
+   "name": "Wheel-based vehicle speed not available",
+   "pgn": 65265,
+   "spn": 84,
+   "data": "FFFFFFFFFFFFFFFF",
+   "expected_status": "NotAvailable",
+   "source": "J1939-71 not-available range"
+  }
+ ]
+}

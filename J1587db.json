@@ -1,0 +1,24 @@
+{
+ "_meta": {
+  "skeleton": true,
+  "description": "Skeleton J1587 database for CSU-RP1210. It defines the schema and contains NO SAE J1587 content.",
+  "replace_with_licensed_copy": [
+   "Create J1587db.licensed.json (metric) and J1587db.us.licensed.json (US customary) from your licensed SAE J1587 document with Tools > J1587 Database, or: python j1587db_tools.py generate J1587.pdf",
+   "The generated files are git-ignored. Do not commit or share licensed content."
+  ],
+  "search_order": ["$CSU_J1587DB", "J1587db.licensed.json or J1587db.us.licensed.json (units preference)", "J1587db.json"],
+  "schema": {
+   "MID": "{mid: name}",
+   "PID": "{pid: {Name, DataLength (characters or 'Variable'), DataType, BitResolution, Offset, Unit, Minimum, Maximum, FormatStr, DataForm, Period, Priority}}. Page 2 PIDs are 256-511. value = raw * BitResolution + Offset; raw is little-endian and, for PIDs 192-253, follows a byte count.",
+   "PIDNames": "{pid: name} for diagnostic codes that refer to a PID",
+   "SID": "{mid: {sid: name}}, with '-1' holding the SIDs common to all MIDs (also copied into each MID)",
+   "FMI": "{fmi: text}"
+  }
+ },
+ "MID": {},
+ "MIDAlias": {},
+ "PID": {},
+ "PIDNames": {},
+ "SID": {"-1": {}},
+ "FMI": {}
+}

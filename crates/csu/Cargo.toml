@@ -1,0 +1,21 @@
+[package]
+name = "csu"
+description = "CSU-RP1210 command-line tool and web UI server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "csu"
+path = "src/main.rs"
+
+[dependencies]
+csu-bus.workspace = true
+csu-j1939.workspace = true
+csu-sec.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap = { version = "4.5", features = ["derive"] }
+axum = { version = "0.8", features = ["ws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }

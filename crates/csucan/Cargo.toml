@@ -1,0 +1,15 @@
+[package]
+name = "csucan"
+description = "CSUCAN: an RP1210 C driver for PEAK PCAN-Basic adapters (Windows, Linux) and SocketCAN (Linux), built on the CSU-RP1210 Rust core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "csucan"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+csu-bus.workspace = true
+csu-j1939.workspace = true
