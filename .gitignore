@@ -165,3 +165,7 @@ J1708.pdf
 J1587*.pdf
 *.licensed.dbc
 RP1210_selection.txt
+RP1210_selection.txt
+# DDEC Reports capture (SecurityAccess seed/key) - keep out of the public repo
+tests/fixtures/ddec_diagnostics_excerpt.log
+tests/test_ddec_diagnostics.py
