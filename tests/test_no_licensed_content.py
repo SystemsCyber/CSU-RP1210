@@ -28,6 +28,21 @@ def tracked_files():
     return [f for f in out.decode("utf-8").split("\0") if f]
 
 
+def tracked_json():
+    """(path, data) for every tracked .json file. A file that does not parse fails the test instead of
+    being skipped: a merge-conflicted J1939db.json once carried the full Digital Annex past these checks."""
+    for f in tracked_files():
+        path = os.path.join(ROOT, f)
+        if not f.lower().endswith(".json") or not os.path.exists(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (ValueError, UnicodeDecodeError) as e:
+            pytest.fail(f"{f} is tracked but is not valid JSON (merge conflict?): {e}")
+        yield f, data
+
+
 def test_no_workbooks_or_licensed_databases_tracked():
     bad = [f for f in tracked_files()
            if f.lower().endswith((".xls", ".xlsx", ".xlsm"))
@@ -37,17 +52,7 @@ def test_no_workbooks_or_licensed_databases_tracked():
 
 
 def test_tracked_databases_are_skeletons():
-    for f in tracked_files():
-        if not f.lower().endswith(".json"):
-            continue
-        path = os.path.join(ROOT, f)
-        if not os.path.exists(path):
-            continue
-        try:
-            with open(path, encoding="utf-8") as fh:
-                data = json.load(fh)
-        except (ValueError, UnicodeDecodeError):
-            continue
+    for f, data in tracked_json():
         if isinstance(data, dict) and "J1939SPNdb" in data:
             assert data.get("_meta", {}).get("skeleton") is True, f"{f} is not marked as a skeleton"
             assert len(data["J1939SPNdb"]) <= 20, f"{f} holds {len(data['J1939SPNdb'])} SPN definitions"
@@ -80,14 +85,7 @@ def test_no_sae_documents_or_exports_tracked():
 
 
 def test_tracked_j1587_databases_are_skeletons():
-    for f in tracked_files():
-        if not f.lower().endswith(".json") or not os.path.exists(os.path.join(ROOT, f)):
-            continue
-        try:
-            with open(os.path.join(ROOT, f), encoding="utf-8") as fh:
-                data = json.load(fh)
-        except (ValueError, UnicodeDecodeError):
-            continue
+    for f, data in tracked_json():
         if isinstance(data, dict) and {"PID", "SID", "FMI"} <= set(data):
             assert data.get("_meta", {}).get("skeleton") is True, f"{f} is not marked as a skeleton"
             assert not data["PID"] and not data["FMI"] and len(data["MID"]) == 0, f"{f} holds J1587 definitions"
