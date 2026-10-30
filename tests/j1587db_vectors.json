@@ -1,0 +1,696 @@
+{
+ "_doc": [
+  "Decode test vectors for J1587 databases. Each vector decodes the data bytes of one PID (for PIDs",
+  "192-253 including the byte count) and checks 'expected' (value per unit system, absolute 'tolerance').",
+  "LICENSING: vectors must not reproduce SAE J1587. They hold recorded payloads and expected results only",
+  "(no resolutions, offsets, ranges or SAE text), cover at most 40 widely published PIDs with at most 3",
+  "vectors each, and use our own names. tests/test_no_licensed_content.py enforces this.",
+  "Regenerate with: python tests/build_j1587_vectors.py LOG.csv (requires the local licensed databases)."
+ ],
+ "vectors": [
+  {
+   "name": "DDEC6 torque limit factor (first)",
+   "mid": 128,
+   "pid": 68,
+   "data": "C8",
+   "expected": {
+    "metric": 100,
+    "us": 100
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 road speed (first)",
+   "mid": 128,
+   "pid": 84,
+   "data": "03",
+   "expected": {
+    "metric": 2.414016,
+    "us": 1.5
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 road speed (highest)",
+   "mid": 128,
+   "pid": 84,
+   "data": "08",
+   "expected": {
+    "metric": 6.437376,
+    "us": 4
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 cruise set speed (first)",
+   "mid": 128,
+   "pid": 86,
+   "data": "00",
+   "expected": {
+    "metric": 0,
+    "us": 0
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 accelerator pedal (first)",
+   "mid": 128,
+   "pid": 91,
+   "data": "00",
+   "expected": {
+    "metric": 0,
+    "us": 0
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 accelerator pedal (highest)",
+   "mid": 128,
+   "pid": 91,
+   "data": "1E",
+   "expected": {
+    "metric": 12,
+    "us": 12
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 accelerator pedal (last)",
+   "mid": 128,
+   "pid": 91,
+   "data": "0B",
+   "expected": {
+    "metric": 4.4,
+    "us": 4.4
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 engine load (first)",
+   "mid": 128,
+   "pid": 92,
+   "data": "1E",
+   "expected": {
+    "metric": 15,
+    "us": 15
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 engine load (highest)",
+   "mid": 128,
+   "pid": 92,
+   "data": "7E",
+   "expected": {
+    "metric": 63,
+    "us": 63
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 engine load (last)",
+   "mid": 128,
+   "pid": 92,
+   "data": "00",
+   "expected": {
+    "metric": 0,
+    "us": 0
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 output torque (first)",
+   "mid": 128,
+   "pid": 93,
+   "data": "00",
+   "expected": {
+    "metric": 0,
+    "us": 0
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 output torque (highest)",
+   "mid": 128,
+   "pid": 93,
+   "data": "0E",
+   "expected": {
+    "metric": 379.629025521,
+    "us": 280
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 output torque (last)",
+   "mid": 128,
+   "pid": 93,
+   "data": "FB",
+   "expected": {
+    "metric": -135.581794829,
+    "us": -100
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 fuel delivery pressure (first)",
+   "mid": 128,
+   "pid": 94,
+   "data": "D6",
+   "expected": {
+    "metric": 737.739030522,
+    "us": 107
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 fuel delivery pressure (highest)",
+   "mid": 128,
+   "pid": 94,
+   "data": "D8",
+   "expected": {
+    "metric": 744.633787817,
+    "us": 108
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 fuel delivery pressure (last)",
+   "mid": 128,
+   "pid": 94,
+   "data": "B4",
+   "expected": {
+    "metric": 620.528156514,
+    "us": 90
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 oil pressure (first)",
+   "mid": 128,
+   "pid": 100,
+   "data": "57",
+   "expected": {
+    "metric": 299.921942315,
+    "us": 43.5
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 oil pressure (highest)",
+   "mid": 128,
+   "pid": 100,
+   "data": "60",
+   "expected": {
+    "metric": 330.948350141,
+    "us": 48
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 oil pressure (last)",
+   "mid": 128,
+   "pid": 100,
+   "data": "00",
+   "expected": {
+    "metric": 0,
+    "us": 0
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 boost pressure (first)",
+   "mid": 128,
+   "pid": 102,
+   "data": "00",
+   "expected": {
+    "metric": 0,
+    "us": 0
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 boost pressure (highest)",
+   "mid": 128,
+   "pid": 102,
+   "data": "08",
+   "expected": {
+    "metric": 6.894757294,
+    "us": 1
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 intake manifold temperature (first)",
+   "mid": 128,
+   "pid": 105,
+   "data": "5A",
+   "expected": {
+    "metric": 32.222222226,
+    "us": 90
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 intake manifold temperature (highest)",
+   "mid": 128,
+   "pid": 105,
+   "data": "61",
+   "expected": {
+    "metric": 36.111111115,
+    "us": 97
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 air inlet pressure (first)",
+   "mid": 128,
+   "pid": 106,
+   "data": "38",
+   "expected": {
+    "metric": 96.526602127,
+    "us": 14
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 air inlet pressure (highest)",
+   "mid": 128,
+   "pid": 106,
+   "data": "3D",
+   "expected": {
+    "metric": 105.145048746,
+    "us": 15.25
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 air inlet pressure (last)",
+   "mid": 128,
+   "pid": 106,
+   "data": "39",
+   "expected": {
+    "metric": 98.250291451,
+    "us": 14.25
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 barometric pressure (first)",
+   "mid": 128,
+   "pid": 108,
+   "data": "E6",
+   "expected": {
+    "metric": 99.112136107,
+    "us": 14.375
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 coolant temperature (first)",
+   "mid": 128,
+   "pid": 110,
+   "data": "7F",
+   "expected": {
+    "metric": 52.777777783,
+    "us": 127
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 coolant temperature (highest)",
+   "mid": 128,
+   "pid": 110,
+   "data": "81",
+   "expected": {
+    "metric": 53.888888895,
+    "us": 129
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 coolant level (first)",
+   "mid": 128,
+   "pid": 111,
+   "data": "C8",
+   "expected": {
+    "metric": 100,
+    "us": 100
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 retarder percent (first)",
+   "mid": 128,
+   "pid": 122,
+   "data": "00",
+   "expected": {
+    "metric": 0,
+    "us": 0
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 battery voltage (first)",
+   "mid": 128,
+   "pid": 168,
+   "data": "1B01",
+   "expected": {
+    "metric": 14.15,
+    "us": 14.15
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 battery voltage (highest)",
+   "mid": 128,
+   "pid": 168,
+   "data": "2101",
+   "expected": {
+    "metric": 14.45,
+    "us": 14.45
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 battery voltage (last)",
+   "mid": 128,
+   "pid": 168,
+   "data": "1101",
+   "expected": {
+    "metric": 13.65,
+    "us": 13.65
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 ambient air temperature (first)",
+   "mid": 128,
+   "pid": 171,
+   "data": "1201",
+   "expected": {
+    "metric": 20.277777781,
+    "us": 68.5
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 exhaust gas temperature (first)",
+   "mid": 128,
+   "pid": 173,
+   "data": "9803",
+   "expected": {
+    "metric": 110.00000001,
+    "us": 230
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 exhaust gas temperature (last)",
+   "mid": 128,
+   "pid": 173,
+   "data": "5003",
+   "expected": {
+    "metric": 100.000000009,
+    "us": 212
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 fuel temperature (first)",
+   "mid": 128,
+   "pid": 174,
+   "data": "3B01",
+   "expected": {
+    "metric": 25.972222226,
+    "us": 78.75
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 fuel temperature (last)",
+   "mid": 128,
+   "pid": 174,
+   "data": "2D01",
+   "expected": {
+    "metric": 24.027777781,
+    "us": 75.25
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 oil temperature (first)",
+   "mid": 128,
+   "pid": 175,
+   "data": "DA01",
+   "expected": {
+    "metric": 48.055555561,
+    "us": 118.5
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 oil temperature (highest)",
+   "mid": 128,
+   "pid": 175,
+   "data": "EF01",
+   "expected": {
+    "metric": 50.972222228,
+    "us": 123.75
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 fuel rate (first)",
+   "mid": 128,
+   "pid": 183,
+   "data": "2200",
+   "expected": {
+    "metric": 0.000558576,
+    "us": 0.00014756
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 fuel rate (highest)",
+   "mid": 128,
+   "pid": 183,
+   "data": "8700",
+   "expected": {
+    "metric": 0.002217875,
+    "us": 0.0005859
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 instantaneous fuel economy (first)",
+   "mid": 128,
+   "pid": 184,
+   "data": "E102",
+   "expected": {
+    "metric": 1.223948871,
+    "us": 2.87890625
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 instantaneous fuel economy (highest)",
+   "mid": 128,
+   "pid": 184,
+   "data": "9E07",
+   "expected": {
+    "metric": 3.23839932,
+    "us": 7.6171875
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 instantaneous fuel economy (last)",
+   "mid": 128,
+   "pid": 184,
+   "data": "6600",
+   "expected": {
+    "metric": 0.169393195,
+    "us": 0.3984375
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 average fuel economy (first)",
+   "mid": 128,
+   "pid": 185,
+   "data": "C905",
+   "expected": {
+    "metric": 2.459522766,
+    "us": 5.78515625
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 pto set speed (first)",
+   "mid": 128,
+   "pid": 187,
+   "data": "8009",
+   "expected": {
+    "metric": 608,
+    "us": 608
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 engine speed (first)",
+   "mid": 128,
+   "pid": 190,
+   "data": "6F09",
+   "expected": {
+    "metric": 603.75,
+    "us": 603.75
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 engine speed (highest)",
+   "mid": 128,
+   "pid": 190,
+   "data": "920C",
+   "expected": {
+    "metric": 804.5,
+    "us": 804.5
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 engine speed (last)",
+   "mid": 128,
+   "pid": 190,
+   "data": "0000",
+   "expected": {
+    "metric": 0,
+    "us": 0
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 total vehicle distance (first)",
+   "mid": 128,
+   "pid": 245,
+   "data": "040B9A5600",
+   "expected": {
+    "metric": 913388.1761664,
+    "us": 567553.1
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 total engine hours (first)",
+   "mid": 128,
+   "pid": 247,
+   "data": "04DCB00400",
+   "expected": {
+    "metric": 15371,
+    "us": 15371
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 total engine hours (highest)",
+   "mid": 128,
+   "pid": 247,
+   "data": "04DDB00400",
+   "expected": {
+    "metric": 15371.05,
+    "us": 15371.05
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 extended boost pressure (first)",
+   "mid": 128,
+   "pid": 439,
+   "data": "0000",
+   "expected": {
+    "metric": 0,
+    "us": 0
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 extended boost pressure (highest)",
+   "mid": 128,
+   "pid": 439,
+   "data": "3800",
+   "expected": {
+    "metric": 6.949915353,
+    "us": 1.008
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  },
+  {
+   "name": "DDEC6 extended boost pressure (last)",
+   "mid": 128,
+   "pid": 439,
+   "data": "0800",
+   "expected": {
+    "metric": 0.99284505,
+    "us": 0.144
+   },
+   "tolerance": 1e-06,
+   "source": "neoVI recording of a DDEC6 truck, 2013-07-01"
+  }
+ ]
+}

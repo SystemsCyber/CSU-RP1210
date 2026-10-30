@@ -33,7 +33,8 @@ from PyQt5.QtWidgets import (QMainWindow,
                              QTreeWidgetItemIterator,
                              QTabWidget)
 from PyQt5.QtCore import Qt, QTimer, QAbstractTableModel, QCoreApplication, QVariant, QAbstractItemModel, QSortFilterProxyModel
-from PyQt5.QtGui import QIcon, QFont
+from PyQt5.QtGui import QIcon, QFont, QKeySequence
+from PyQt5.QtWidgets import QShortcut
 
 import time
 import random
@@ -65,8 +66,22 @@ class ComponentInfoTab(QWidget):
         logger.debug("Setting up Component Information Tab.")
         self.component_tab = QScrollArea()
         self.tabs.addTab(self.component_tab, "Component Information")
+        outer_layout = QVBoxLayout()
+        self.component_tab.setLayout(outer_layout)
         self.tab_layout = QHBoxLayout()
-        self.component_tab.setLayout(self.tab_layout)
+        outer_layout.addLayout(self.tab_layout, 3)
+
+        # J1939-81 Address Claimed (PGN 60928): each device's NAME. A claim overrides the
+        # preferred-address meaning of its source address in the J1939 tables.
+        claims_box = QGroupBox("J1939 Address Claims (PGN 60928)")
+        claims_layout = QVBoxLayout()
+        self.claims_table = QTableWidget()
+        self.claims_table.setSortingEnabled(True)
+        self.claims_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.claims_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        claims_layout.addWidget(self.claims_table)
+        claims_box.setLayout(claims_layout)
+        outer_layout.addWidget(claims_box, 2)
         
         component_button_box = QGroupBox("Request Buttons")
         component_button_layout = QVBoxLayout()
@@ -74,28 +89,37 @@ class ComponentInfoTab(QWidget):
         component_button_box.setLayout(component_button_layout)
         self.tab_layout.addWidget(component_button_box)
 
-        get_vin_button = QPushButton("Request VIN")
+        get_vin_button = QPushButton("Request &VIN")
         get_vin_button.clicked.connect(self.request_VIN)
         component_button_layout.addWidget(get_vin_button)
         
-        get_component_ID_button = QPushButton("Request Component ID")
+        get_component_ID_button = QPushButton("Request &Component ID")
         get_component_ID_button.clicked.connect(self.request_component_ID)
         component_button_layout.addWidget(get_component_ID_button)
         
-        software_ID_button = QPushButton("Request Software ID")
+        software_ID_button = QPushButton("Request &Software ID")
         software_ID_button.clicked.connect(self.request_software)
         component_button_layout.addWidget(software_ID_button)
 
-        distance_button = QPushButton("Request ECU Distances")
+        distance_button = QPushButton("Request ECU &Distances")
         distance_button.clicked.connect(self.request_distance)
         component_button_layout.addWidget(distance_button)
 
-        hours_button = QPushButton("Request ECU Hours")
+        hours_button = QPushButton("Request ECU H&ours")
         hours_button.clicked.connect(self.request_hours)
         component_button_layout.addWidget(hours_button)
                 
-        refresh_button = QPushButton("Refresh Data")
+        claims_button = QPushButton("Request &Address Claims")
+        claims_button.setToolTip("Send a global request for Address Claimed (PGN 60928). Every J1939 device "
+                                 "answers with its NAME (industry group, function, manufacturer).")
+        claims_button.clicked.connect(self.request_address_claims)
+        component_button_layout.addWidget(claims_button)
+
+        refresh_button = QPushButton("R&efresh Data")
         refresh_button.clicked.connect(self.rebuild_trees)
+        refresh_button.setToolTip("Refresh the component information (F5)")
+        # F5 refreshes while this tab is shown (a shortcut on a hidden tab does not fire).
+        QShortcut(QKeySequence("F5"), self.component_tab, activated=self.rebuild_trees)
         component_button_layout.addWidget(refresh_button)
  
 
@@ -207,6 +231,32 @@ class ComponentInfoTab(QWidget):
         self.realtime_tree.resizeColumnToContents(0)
         self.component_tree.resizeColumnToContents(1)
         self.realtime_tree.resizeColumnToContents(1)
+        self.fill_claims_table()
+
+    def fill_claims_table(self):
+        claims = self.root.data_package.get("Address Claims", {})
+        columns = ["Source Address", "Claimed As", "Industry Group", "Vehicle System", "Vehicle System Instance",
+                   "Function", "Function Instance", "ECU Instance", "Manufacturer", "Identity Number",
+                   "Arbitrary Address Capable", "NAME"]
+        self.claims_table.setSortingEnabled(False)
+        self.claims_table.clear()
+        self.claims_table.setColumnCount(len(columns))
+        self.claims_table.setHorizontalHeaderLabels(columns)
+        self.claims_table.setRowCount(len(claims))
+        for row, (key, claim) in enumerate(sorted(claims.items())):
+            for col, name in enumerate(columns):
+                item = QTableWidgetItem()
+                value = claim.get(name, "")
+                # Numbers sort numerically.
+                item.setData(Qt.DisplayRole, value if isinstance(value, int) else str(value))
+                self.claims_table.setItem(row, col, item)
+        self.claims_table.setSortingEnabled(True)
+        self.claims_table.resizeColumnsToContents()
+
+    def request_address_claims(self):
+        self.root.send_j1939_request(60928, 0xFF)
+        # Devices answer within a few hundred milliseconds.
+        QTimer.singleShot(1500, self.rebuild_trees)
 
     def request_VIN(self):
         self.send_requests(65260, 237)

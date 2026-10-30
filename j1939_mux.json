@@ -1,0 +1,67 @@
+{
+  "_doc": [
+    "Multiplexed parameter groups for the J1939 tab ('Expand Multiplexed PGNs').",
+    "A multiplexed PGN carries different messages selected by its first byte(s), so it is split into one row per selector value.",
+    "Normal broadcast PGNs (fixed SPN layout) are not listed and are never split.",
+    "selector: 'byte' uses data[byte] & mask (optionally >> shift); 'pgn' uses the requested PGN in bytes 1-3;",
+    "'isotp' uses the ISO 15765-2 frame type and, for single and first frames, the UDS service identifier.",
+    "labels name selector values (decimal keys). 'labels_ref' points to a shared table in 'tables'.",
+    "max_rows_per_pgn limits the rows of one PGN and source address; further values share an 'other' row.",
+    "Add OEM or implement-specific multiplexers here (e.g. a proprietary PGN with a known first-byte message ID)."
+  ],
+  "max_rows_per_pgn": 64,
+  "pgns": {
+    "60416":  {"name": "TP.CM", "selector": "byte", "byte": 0,
+               "labels": {"16": "RTS", "17": "CTS", "19": "EoMA", "32": "BAM", "255": "Abort"}},
+    "51200":  {"name": "ETP.CM", "selector": "byte", "byte": 0,
+               "labels": {"20": "RTS", "21": "CTS", "22": "DPO", "23": "EoMA", "255": "Abort"}},
+    "59392":  {"name": "Acknowledgment", "selector": "byte", "byte": 0,
+               "labels": {"0": "ACK", "1": "NACK", "2": "Access denied", "3": "Cannot respond"}},
+    "59904":  {"name": "Request", "selector": "pgn"},
+    "55808":  {"name": "ISO 15765 diagnostics", "selector": "isotp"},
+    "61184":  {"name": "Proprietary A", "selector": "byte", "byte": 0},
+    "126720": {"name": "Proprietary A2", "selector": "byte", "byte": 0},
+    "58880":  {"name": "VT to ECU", "selector": "byte", "byte": 0, "labels_ref": "vt_functions"},
+    "59136":  {"name": "ECU to VT", "selector": "byte", "byte": 0, "labels_ref": "vt_functions"},
+    "51968":  {"name": "Process data", "selector": "byte", "byte": 0, "mask": 15,
+               "labels": {"0": "Technical capabilities", "1": "Device descriptor", "2": "Request value",
+                          "3": "Value", "13": "Process data acknowledge", "14": "Task controller status",
+                          "15": "Client task"}},
+    "43520":  {"name": "File server", "selector": "byte", "byte": 0},
+    "43776":  {"name": "File server", "selector": "byte", "byte": 0},
+    "58112":  {"name": "DM7 test request", "selector": "byte", "byte": 0}
+  },
+  "ranges": [
+    {"first": 65280, "last": 65535, "name": "Proprietary B", "selector": "byte", "byte": 0}
+  ],
+  "tables": {
+    "vt_functions": {
+      "0": "Soft Key Activation", "1": "Button Activation", "2": "Pointing Event", "3": "VT Select Input Object",
+      "4": "VT ESC", "5": "VT Change Numeric Value", "6": "VT Change Active Mask", "7": "VT Change Soft Key Mask",
+      "8": "VT Change String Value", "9": "VT On User-Layout Hide/Show", "10": "VT Control Audio Signal Termination",
+      "17": "Object Pool Transfer", "18": "End of Object Pool",
+      "160": "Hide/Show Object", "161": "Enable/Disable Object", "162": "Select Input Object",
+      "163": "Control Audio Signal", "164": "Set Audio Volume", "165": "Change Child Location", "166": "Change Size",
+      "167": "Change Background Colour", "168": "Change Numeric Value", "169": "Change End Point",
+      "170": "Change Font Attributes", "171": "Change Line Attributes", "172": "Change Fill Attributes",
+      "173": "Change Active Mask", "174": "Change Soft Key Mask", "175": "Change Attribute", "176": "Change Priority",
+      "177": "Change List Item", "178": "Delete Object Pool", "179": "Change String Value",
+      "180": "Change Child Position", "181": "Change Object Label", "182": "Change Polygon Point",
+      "183": "Change Polygon Scale", "184": "Graphics Context", "185": "Get Attribute Value",
+      "186": "Select Colour Map", "187": "Identify VT", "188": "Execute Extended Macro", "189": "Lock/Unlock Mask",
+      "190": "Execute Macro", "192": "Get Memory", "193": "Get Supported Widechars", "194": "Get Number of Soft Keys",
+      "195": "Get Text Font Data", "196": "Get Window Mask Data", "197": "Get Supported Objects", "199": "Get Hardware",
+      "208": "Store Version", "209": "Load Version", "210": "Delete Version", "211": "Extended Get Versions",
+      "212": "Extended Store Version", "213": "Extended Load Version", "214": "Extended Delete Version",
+      "223": "Get Versions", "224": "Get Versions Response", "254": "VT Status", "255": "Working Set Maintenance"
+    },
+    "uds_services": {
+      "16": "DiagnosticSessionControl", "17": "ECUReset", "20": "ClearDiagnosticInformation",
+      "25": "ReadDTCInformation", "34": "ReadDataByIdentifier", "35": "ReadMemoryByAddress",
+      "39": "SecurityAccess", "40": "CommunicationControl", "46": "WriteDataByIdentifier",
+      "47": "InputOutputControlByIdentifier", "49": "RoutineControl", "52": "RequestDownload",
+      "53": "RequestUpload", "54": "TransferData", "55": "RequestTransferExit", "61": "WriteMemoryByAddress",
+      "62": "TesterPresent", "127": "NegativeResponse", "133": "ControlDTCSetting"
+    }
+  }
+}

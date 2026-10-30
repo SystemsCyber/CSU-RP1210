@@ -1,0 +1,17 @@
+LIBRARY rp1210_bridge64.dll
+
+EXPORTS
+    RP1210_ClientConnect
+    RP1210_ClientDisconnect
+    RP1210_SendMessage
+    RP1210_ReadMessage
+    RP1210_SendCommand
+    RP1210_ReadVersion
+    RP1210_ReadDetailedVersion
+    RP1210_GetHardwareStatus
+    RP1210_GetHardwareStatusEx
+    RP1210_GetErrorMsg
+    RP1210_GetLastErrorMsg
+    RP1210_Ioctl
+    RP1210Bridge_SetTarget
+    RP1210Bridge_GetStatus

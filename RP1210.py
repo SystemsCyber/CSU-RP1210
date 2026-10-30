@@ -5,6 +5,7 @@ from ctypes import *
 from ctypes.wintypes import HWND
 import json
 import os
+import sys
 import threading
 import time
 import struct
@@ -15,9 +16,72 @@ import logging
 logger = logging.getLogger(__name__)
 
 def get_storage_path():
+    """Folder for user files: next to CSU_RP1210.exe when frozen (portable), else the working directory."""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
     return os.getcwd()
 
 BUFFER_SIZE = 8192
+
+# 32-to-64-bit RP1210 bridge (rp1210_bridge/): lets this 64-bit program use
+# vendors' 32-bit-only RP1210 DLLs through rp1210_host32.exe.
+BRIDGE_DLL = "rp1210_bridge64.dll"
+
+
+# CSUCAN: the project's own RP1210 driver (crates/csucan) for PEAK PCAN-Basic
+# adapters and Linux SocketCAN. It ships with the application rather than
+# being installed in the Windows directory.
+CSUCAN_NAME = "CSUCAN"
+CSUCAN_LIBRARY = "csucan.dll" if sys.platform == "win32" else "libcsucan.so"
+
+
+def find_csucan():
+    """Path of the bundled CSUCAN driver library, or None."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [getattr(sys, "_MEIPASS", None), os.path.dirname(sys.executable), here,
+                  os.path.join(here, "target", "release")]
+    for d in filter(None, candidates):
+        path = os.path.join(d, CSUCAN_LIBRARY)
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def write_csucan_ini(path):
+    """Have CSUCAN write its vendor INI (attached PEAK/SocketCAN devices) to path."""
+    lib_path = find_csucan()
+    if not lib_path:
+        return False
+    loader = windll if sys.platform == "win32" else cdll
+    lib = loader.LoadLibrary(lib_path)
+    lib.CSUCAN_WriteIni.restype = c_short
+    return lib.CSUCAN_WriteIni(c_char_p(os.fsencode(path))) == 0
+
+
+def find_rp1210_bridge():
+    """Path of rp1210_bridge64.dll (with rp1210_host32.exe beside it), or None."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [getattr(sys, "_MEIPASS", None), os.path.dirname(sys.executable), here,
+                  os.path.join(here, "rp1210_bridge", "bin")]
+    for d in filter(None, candidates):
+        dll = os.path.join(d, BRIDGE_DLL)
+        if os.path.exists(dll) and os.path.exists(os.path.join(d, "rp1210_host32.exe")):
+            return dll
+    return None
+
+
+def dll_is_64bit(path):
+    """True for an x64/ARM64 DLL, False for x86, None if the PE header cannot be read."""
+    try:
+        with open(path, "rb") as f:
+            header = f.read(4096)
+        pe = struct.unpack("<L", header[0x3C:0x40])[0]
+        if header[pe:pe + 4] != b"PE\0\0":
+            return None
+        machine = struct.unpack("<H", header[pe + 4:pe + 6])[0]
+        return {0x8664: True, 0xAA64: True, 0x014C: False}.get(machine)
+    except (OSError, struct.error):
+        return None
 
 class RP1210ReadMessageThread(threading.Thread):
     '''This thread is designed to receive messages from the vehicle diagnostic
@@ -127,25 +191,54 @@ class RP1210ReadMessageThread(threading.Thread):
 class RP1210Class():
     """A class to access RP1210 libraries for different devices."""
     def __init__(self, dll_name):
-        """
+        r"""
         Load the Windows Device Library
         The input argument is the dll_name from one of the manufacturers DLLs in the c:\Windows directory  
         """
         self.nClientID = None
         self.ucTxRxBuffer = (c_char*BUFFER_SIZE)()
         self.dll_name = dll_name
+        self.bridge_target = None
         self.dll_path = self.find_dll_path()
         self.create_RP1210_functions()
         
     
     def find_dll_path(self):
-        places_to_look = [r'C:\Windows\SysWOW64', r'C:\Windows',r'C:\Windows\System32']
-        for place in places_to_look:
-            logger.debug("looking for RP1210 DLL in {}".format(place))
-            dll_path = os.path.join(place,self.dll_name + '.dll')
-            if os.path.exists(dll_path):    
+        """
+        Find the vendor DLL that matches this process: a 64-bit process needs a
+        64-bit DLL (System32 on 64-bit Windows), a 32-bit process a 32-bit DLL
+        (SysWOW64). A mismatched DLL cannot be loaded.
+        """
+        is_64bit = sys.maxsize > 2**32
+        if self.dll_name.upper() == CSUCAN_NAME:
+            path = find_csucan()
+            if path:
+                logger.info("Using the CSUCAN driver at {}".format(path))
+                return path
+        windir = os.environ.get("WINDIR", r"C:\Windows")
+        order = ["System32", "", "SysWOW64"] if is_64bit else ["SysWOW64", "", "System32"]
+        mismatched = []
+        for sub in order:
+            dll_path = os.path.join(windir, sub, self.dll_name + '.dll')
+            logger.debug("looking for RP1210 DLL at {}".format(dll_path))
+            if not os.path.exists(dll_path):
+                continue
+            dll_64bit = dll_is_64bit(dll_path)
+            if dll_64bit is None or dll_64bit == is_64bit:
                 logger.info("Found RP1210 DLL at {}".format(dll_path))
                 return dll_path
+            mismatched.append(dll_path)
+        if mismatched:
+            bridge = find_rp1210_bridge() if is_64bit and sys.platform == "win32" else None
+            if bridge:
+                logger.info("Only a 32-bit {}.dll is installed; using the RP1210 bridge {}".format(self.dll_name, bridge))
+                self.bridge_target = self.dll_name
+                return bridge
+            logger.warning("Only a {}-bit {}.dll is installed ({}); this is a {}-bit program. Use the {}-bit "
+                           "CSU_RP1210 build for this adapter.".format(32 if is_64bit else 64, self.dll_name,
+                                                                        mismatched[0], 64 if is_64bit else 32,
+                                                                        32 if is_64bit else 64))
+            return mismatched[0]
         logger.warning("Could not find RP1210 DLL. Please make sure drivers are installed.")
         logger.debug("We'll try to use just the filename and see what happens.")
         return self.dll_name + '.dll'
@@ -170,10 +263,15 @@ class RP1210Class():
         logger.debug("Loading the RP1210 driver file at {}".format(self.dll_path))
         try:
             RP1210DLL = windll.LoadLibrary(self.dll_path)
+            if self.bridge_target:
+                result = RP1210DLL.RP1210Bridge_SetTarget(c_char_p(self.bridge_target.encode("ascii")))
+                if result != 0:
+                    logger.error("RP1210Bridge_SetTarget failed with return value %d", result)
+                    return False
         except:
             logger.debug(traceback.format_exc())
-            logger.info("\nIf RP1210 DLL fails to load, please check to be sure you are using"
-                + " a 32-bit version of Python and you have the correct drivers for the VDA installed.")
+            logger.info("If the RP1210 DLL fails to load, check that its bitness matches this program "
+                        "({}-bit) and that the drivers for the VDA are installed.".format(64 if sys.maxsize > 2**32 else 32))
             return False
 
         # Define windows prototype functions:
@@ -235,17 +333,20 @@ class RP1210Class():
             logger.debug(traceback.format_exc())
         return True
 
-    def get_client_id(self, protocol, deviceID, speed):
+    def get_client_id(self, protocol, deviceID, speed, channel=None):
         """
         Loads the DLL in to Python and assignes self.nClientID. This is used to reference the DLL client in the app.
         Saves successful clients to a json file so it doesn't ask the user for input each time.
         """
         QCoreApplication.processEvents()
         nClientID = None
+        params = []
         if len(speed) > 0 and (protocol == "J1939"  or protocol == "CAN" or protocol == "ISO15765"):
-            protocol_bytes = bytes(protocol + ":Baud={}".format(speed),'ascii')
-        else:
-            protocol_bytes = bytes(protocol,'ascii')
+            params.append("Baud={}".format(speed))
+        # RP1210C multi-channel adapters (e.g. PEAK PCAN-PCI Express FD): select the channel.
+        if channel and int(channel) > 1 and protocol in ("J1939", "CAN", "ISO15765"):
+            params.append("Channel={}".format(int(channel)))
+        protocol_bytes = bytes(protocol + (":" + ",".join(params) if params else ""), 'ascii')
         logger.debug("Connecting with ClientConnect using " + repr(protocol_bytes))
         try:
             nClientID = self.ClientConnect(HWND(None), c_short(deviceID), protocol_bytes, BUFFER_SIZE, BUFFER_SIZE, 0)
@@ -369,6 +470,7 @@ class RP1210Class():
         logger.debug(message)
         message_window.setText(message)
         message_window.exec_()
+
 
     def get_hardware_status(self, nClientID=1):
         """
@@ -692,4 +794,3 @@ class RP1210Class():
         logger.debug(message)
         message_window.setText(message)
         message_window.exec_()
-

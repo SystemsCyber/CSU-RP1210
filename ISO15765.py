@@ -138,9 +138,10 @@ class ISO15765Driver():
     
     def look_up_source(self, sa):
         try:
-            return  self.root.j1939db["J1939SATabledb"]["{}".format(sa)]
-        except KeyError:
-            return "Unknown"
+            # The J1939 tab knows the industry group and address claims.
+            return self.root.J1939.get_sa_name(sa)
+        except AttributeError:
+            return self.root.j1939db.get("J1939SATabledb", {}).get("{}".format(sa), "Unknown")
 
     def read_message(self, display=False):
         # The queue is fed by RP1210ReadMessageThread 
